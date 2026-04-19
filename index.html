@@ -18,7 +18,7 @@
         .paddle-btn {
             width: 100px; height: 100px; background-color: #ffcc00; border: 5px solid #fff; border-radius: 20px;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            box-shadow: 0 8px 0 #cc9900; pointer-events: auto; -webkit-user-select: none; user-select: none;
+            box-shadow: 0 8px 0 #cc9900; pointer-events: auto; -webkit-user-select: none; user-select: none; cursor: pointer;
         }
         .paddle-btn:active { transform: translateY(4px); box-shadow: 0 4px 0 #cc9900; background: #ffaa00; }
         .paddle-icon { font-size: 40px; margin-bottom: 2px; pointer-events: none; }
@@ -33,6 +33,9 @@
         .score-display { font-size: 48px; color: #e63946; font-weight: bold; margin: 20px 0; }
         input { width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 10px; font-size: 18px; box-sizing: border-box; }
         .submit-btn { width: 100%; background: #e63946; color: white; border: none; padding: 15px; border-radius: 10px; font-size: 20px; font-weight: bold; }
+
+        /* 强制 Canvas 撑满屏幕且置于底层 */
+        #game-canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
     </style>
 </head>
 <body>
@@ -67,89 +70,104 @@
     </div>
 
     <script>
-        const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx';
-        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        // --- 容错处理：即使 Supabase 挂了也不影响画面渲染 ---
+        let sb = null;
+        try {
+            if (typeof supabase !== 'undefined') {
+                const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co';
+                const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx';
+                sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            }
+        } catch(e) { console.error("数据库初始化异常", e); }
 
         const TOTAL_DIST = 5000; 
         let distance = 0, speed = 0, startTime = 0, lastSide = '', finished = false, isGaming = false;
+        
+        let app, boatContainer, finishLine, bgLayer;
 
-        // 1. 初始化 Pixi
-        const app = new PIXI.Application({
-            width: window.innerWidth,
-            height: window.innerHeight,
-            backgroundColor: 0x00aaff,
-            antialias: true,
-            resolution: window.devicePixelRatio || 1,
-            autoDensity: true
-        });
-        document.body.appendChild(app.view);
+        // 核心修改：等待整个网页（包括图片、尺寸）完全加载后再启动引擎
+        window.addEventListener('load', initGame);
 
-        // 2. 绘制背景波纹 (改用 Graphics 循环绘制，增强兼容性)
-        const bg = new PIXI.Graphics();
-        app.stage.addChild(bg);
+        function initGame() {
+            // 1. 初始化 Pixi，增加 resizeTo 以自动管理宽高
+            app = new PIXI.Application({
+                resizeTo: window, // 自动填满屏幕，防止计算为 0
+                backgroundColor: 0x00aaff,
+                antialias: true,
+                resolution: window.devicePixelRatio || 1,
+                autoDensity: true
+            });
+            app.view.id = 'game-canvas';
+            document.body.appendChild(app.view);
 
-        function updateBackground() {
-            bg.clear();
-            bg.lineStyle(2, 0x0099ee, 0.5);
-            const offset = (distance % 100);
-            for (let y = -100; y < app.screen.height + 100; y += 100) {
-                for (let x = 0; x < app.screen.width; x += 100) {
-                    bg.moveTo(x, y + offset);
-                    bg.bezierCurveTo(x + 25, y - 20 + offset, x + 75, y + 20 + offset, x + 100, y + offset);
+            // 2. 绘制静态背景（避免逐帧重绘导致显存崩溃）
+            bgLayer = new PIXI.Graphics();
+            bgLayer.lineStyle(2, 0x0099ee, 0.5);
+            // 只画一次网格状的波纹，高度画得非常长，通过上下平移来实现滚动感
+            for (let y = -200; y < window.innerHeight + 1000; y += 100) {
+                for (let x = 0; x < window.innerWidth + 200; x += 100) {
+                    bgLayer.moveTo(x, y);
+                    bgLayer.bezierCurveTo(x + 25, y - 20, x + 75, y + 20, x + 100, y);
                 }
             }
+            app.stage.addChild(bgLayer);
+
+            // 3. 绘制龙舟
+            boatContainer = new PIXI.Container();
+            app.stage.addChild(boatContainer);
+
+            const boatBody = new PIXI.Graphics();
+            // 船身
+            boatBody.beginFill(0xd32f2f);
+            boatBody.drawRoundedRect(-25, -80, 50, 160, 25);
+            boatBody.endFill();
+            // 内部
+            boatBody.beginFill(0x9a0007);
+            boatBody.drawRect(-18, -60, 36, 120);
+            boatBody.endFill();
+            // 龙头
+            boatBody.beginFill(0xd32f2f);
+            boatBody.drawEllipse(0, -95, 28, 35);
+            boatBody.endFill();
+            // 眼睛
+            boatBody.beginFill(0xffffff);
+            boatBody.drawCircle(-10, -100, 6); boatBody.drawCircle(10, -100, 6);
+            boatBody.beginFill(0x000000);
+            boatBody.drawCircle(-10, -100, 3); boatBody.drawCircle(10, -100, 3);
+            // 龙角
+            boatBody.lineStyle(5, 0x4e342e);
+            boatBody.moveTo(-15, -115).lineTo(-25, -135);
+            boatBody.moveTo(15, -115).lineTo(25, -135);
+            
+            boatContainer.addChild(boatBody);
+
+            // 船桨
+            const leftOar = new PIXI.Graphics();
+            leftOar.beginFill(0x795548).drawRect(-50, -5, 50, 10).endFill();
+            leftOar.position.set(-25, 20);
+            
+            const rightOar = new PIXI.Graphics();
+            rightOar.beginFill(0x795548).drawRect(0, -5, 50, 10).endFill();
+            rightOar.position.set(25, 20);
+            
+            boatContainer.addChild(leftOar, rightOar);
+
+            // 初始化中心坐标
+            boatContainer.x = window.innerWidth / 2;
+            boatContainer.y = window.innerHeight - 200;
+            // 确保龙舟在顶层
+            boatContainer.zIndex = 10;
+            app.stage.sortableChildren = true;
+
+            // 终点线
+            finishLine = new PIXI.Graphics();
+            finishLine.beginFill(0xffffff).drawRect(0, 0, 2000, 40).endFill();
+            finishLine.visible = false;
+            app.stage.addChild(finishLine);
+
+            // 挂载渲染循环
+            app.ticker.add(gameLoop);
         }
-
-        // 3. 绘制龙舟
-        const boatContainer = new PIXI.Container();
-        app.stage.addChild(boatContainer);
-
-        const boatBody = new PIXI.Graphics();
-        // 船身
-        boatBody.beginFill(0xd32f2f);
-        boatBody.drawRoundedRect(-25, -80, 50, 160, 25);
-        boatBody.endFill();
-        // 内部
-        boatBody.beginFill(0x9a0007);
-        boatBody.drawRect(-18, -60, 36, 120);
-        boatBody.endFill();
-        // 龙头
-        boatBody.beginFill(0xd32f2f);
-        boatBody.drawEllipse(0, -95, 28, 35);
-        boatBody.endFill();
-        // 眼睛
-        boatBody.beginFill(0xffffff);
-        boatBody.drawCircle(-10, -100, 6); boatBody.drawCircle(10, -100, 6);
-        boatBody.beginFill(0x000000);
-        boatBody.drawCircle(-10, -100, 3); boatBody.drawCircle(10, -100, 3);
-        // 龙角
-        boatBody.lineStyle(5, 0x4e342e);
-        boatBody.moveTo(-15, -115).lineTo(-25, -135);
-        boatBody.moveTo(15, -115).lineTo(25, -135);
-        
-        boatContainer.addChild(boatBody);
-
-        // 船桨
-        const leftOar = new PIXI.Graphics();
-        leftOar.beginFill(0x795548).drawRect(-50, -5, 50, 10).endFill();
-        leftOar.position.set(-25, 20);
-        
-        const rightOar = new PIXI.Graphics();
-        rightOar.beginFill(0x795548).drawRect(0, -5, 50, 10).endFill();
-        rightOar.position.set(25, 20);
-        
-        boatContainer.addChild(leftOar, rightOar);
-
-        // 初始化位置
-        boatContainer.x = app.screen.width / 2;
-        boatContainer.y = app.screen.height - 200;
-
-        // 终点线
-        const finishLine = new PIXI.Graphics();
-        finishLine.beginFill(0xffffff).drawRect(0, 0, app.screen.width, 40).endFill();
-        finishLine.visible = false;
-        app.stage.addChild(finishLine);
 
         // 4. 逻辑控制
         function preStart() {
@@ -175,7 +193,7 @@
 
         function handlePaddle(side, event) {
             if (event) event.preventDefault();
-            if (!isGaming || finished) return;
+            if (!isGaming || finished || !boatContainer) return;
 
             if (side !== lastSide) {
                 speed += 8.0; 
@@ -185,20 +203,17 @@
             }
             lastSide = side;
 
-            if(side === 'left') {
-                leftOar.rotation = 0.7;
-                setTimeout(() => leftOar.rotation = 0, 100);
-            } else {
-                rightOar.rotation = -0.7;
-                setTimeout(() => rightOar.rotation = 0, 100);
-            }
+            const targetOar = side === 'left' ? boatContainer.children[1] : boatContainer.children[2];
+            targetOar.rotation = side === 'left' ? 0.7 : -0.7;
+            setTimeout(() => targetOar.rotation = 0, 100);
         }
 
-        app.ticker.add(() => {
-            updateBackground();
+        function gameLoop() {
+            // 背景视觉平移，不消耗重新计算路径的性能
+            bgLayer.y = distance % 100;
 
             if (!isGaming || finished) {
-                boatContainer.y = (app.screen.height - 200) + Math.sin(Date.now() / 600) * 5;
+                boatContainer.y = (window.innerHeight - 200) + Math.sin(Date.now() / 600) * 5;
                 return;
             }
 
@@ -210,7 +225,7 @@
             const p = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
             document.getElementById('prog').innerText = p;
 
-            if(distance > TOTAL_DIST - app.screen.height) {
+            if(distance > TOTAL_DIST - window.innerHeight) {
                 finishLine.visible = true;
                 finishLine.y = (TOTAL_DIST - distance);
             }
@@ -218,14 +233,14 @@
             boatContainer.scale.x += (1 - boatContainer.scale.x) * 0.1;
             boatContainer.scale.y += (1 - boatContainer.scale.y) * 0.1;
             boatContainer.rotation = Math.sin(Date.now() / 100) * (0.01 + speed * 0.001);
-            boatContainer.y = (app.screen.height - 200) + Math.cos(Date.now() / 150) * 4;
+            boatContainer.y = (window.innerHeight - 200) + Math.cos(Date.now() / 150) * 4;
 
             if (distance >= TOTAL_DIST) {
                 finished = true;
                 isGaming = false;
                 showResult(now.toFixed(2));
             }
-        });
+        }
 
         function showResult(s) {
             document.getElementById('final-time').innerText = s;
@@ -237,14 +252,20 @@
             const name = document.getElementById('user-name').value.trim();
             const score = parseFloat(document.getElementById('final-time').innerText);
             if (!name) return alert("请输入姓名！");
+            
+            if(!sb) {
+                alert("数据库加载失败，仅本地显示：\n姓名：" + name + " \n成绩：" + score + "秒");
+                location.reload();
+                return;
+            }
+
             const { error } = await sb.from('ranks').insert([{ nickname: name, score: score }]);
             if (error) alert("提交失败");
             else location.reload();
         }
 
         window.addEventListener('resize', () => {
-            app.renderer.resize(window.innerWidth, window.innerHeight);
-            boatContainer.x = app.screen.width / 2;
+            if (boatContainer) boatContainer.x = window.innerWidth / 2;
         });
     </script>
 </body>
