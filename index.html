@@ -9,7 +9,6 @@
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #0088cc; touch-action: none; font-family: "Microsoft YaHei", sans-serif; }
         
-        /* UI 样式保持不变 */
         #ui-header { position: absolute; top: 0; width: 100%; height: 80px; background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent); color: white; display: flex; justify-content: space-around; align-items: center; z-index: 10; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
         .stat-item { text-align: center; }
         .stat-label { font-size: 12px; opacity: 0.8; }
@@ -17,19 +16,9 @@
 
         .controls { position: fixed; bottom: 5%; width: 100%; display: flex; justify-content: space-around; z-index: 100; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
         .paddle-btn {
-            width: 100px;
-            height: 100px;
-            background-color: #ffcc00;
-            border: 5px solid #fff;
-            border-radius: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 8px 0 #cc9900;
-            pointer-events: auto;
-            -webkit-user-select: none;
-            user-select: none; /* 防止长按弹出菜单 */
+            width: 100px; height: 100px; background-color: #ffcc00; border: 5px solid #fff; border-radius: 20px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            box-shadow: 0 8px 0 #cc9900; pointer-events: auto; -webkit-user-select: none; user-select: none;
         }
         .paddle-btn:active { transform: translateY(4px); box-shadow: 0 4px 0 #cc9900; background: #ffaa00; }
         .paddle-icon { font-size: 40px; margin-bottom: 2px; pointer-events: none; }
@@ -55,24 +44,16 @@
     </div>
 
     <div id="ui-header">
-        <div class="stat-item">
-            <div class="stat-label">完成进度</div>
-            <div class="stat-value"><span id="prog">0</span>%</div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-label">当前耗时</div>
-            <div class="stat-value"><span id="time">0.00</span>s</div>
-        </div>
+        <div class="stat-item"><div class="stat-label">完成进度</div><div class="stat-value"><span id="prog">0</span>%</div></div>
+        <div class="stat-item"><div class="stat-label">当前耗时</div><div class="stat-value"><span id="time">0.00</span>s</div></div>
     </div>
 
     <div class="controls" id="controls">
         <div class="paddle-btn" ontouchstart="handlePaddle('left', event)" onmousedown="handlePaddle('left')">
-            <div class="paddle-icon">🚣</div>
-            <div class="paddle-text">左桨</div>
+            <div class="paddle-icon">🚣</div><div class="paddle-text">左桨</div>
         </div>
         <div class="paddle-btn" ontouchstart="handlePaddle('right', event)" onmousedown="handlePaddle('right')">
-            <div class="paddle-icon">🚣</div>
-            <div class="paddle-text">右桨</div>
+            <div class="paddle-icon">🚣</div><div class="paddle-text">右桨</div>
         </div>
     </div>
 
@@ -86,7 +67,6 @@
     </div>
 
     <script>
-        // --- 1. 初始化 ---
         const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx';
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -94,111 +74,84 @@
         const TOTAL_DIST = 5000; 
         let distance = 0, speed = 0, startTime = 0, lastSide = '', finished = false, isGaming = false;
 
-        // 初始化 Pixi 渲染器，关闭 Hello 消息
-        PIXI.utils.skipHello();
+        // 1. 初始化 Pixi
         const app = new PIXI.Application({
             width: window.innerWidth,
             height: window.innerHeight,
-            backgroundColor: 0x00aaff, // 基础蓝色
+            backgroundColor: 0x00aaff,
             antialias: true,
-            resolution: window.devicePixelRatio || 1
+            resolution: window.devicePixelRatio || 1,
+            autoDensity: true
         });
         document.body.appendChild(app.view);
 
-        // --- 2. 纯代码绘制背景 (彻底抛弃外部图片) ---
-        const backgroundContainer = new PIXI.Container();
-        app.stage.addChild(backgroundContainer);
+        // 2. 绘制背景波纹 (改用 Graphics 循环绘制，增强兼容性)
+        const bg = new PIXI.Graphics();
+        app.stage.addChild(bg);
 
-        // 绘制简单的波纹纹理
-        const waveGfx = new PIXI.Graphics();
-        waveGfx.lineStyle(2, 0x0099ee, 0.5);
-        waveGfx.moveTo(0, 10).bezierCurveTo(25, -10, 75, 30, 100, 10);
-        const waveTex = app.renderer.generateTexture(waveGfx);
-        
-        const water = new PIXI.TilingSprite(waveTex, app.screen.width, app.screen.height);
-        backgroundContainer.addChild(water);
-
-        // --- 3. 绘制龙舟 (核心修复) ---
-        const boatLayer = new PIXI.Container();
-        app.stage.addChild(boatLayer);
-
-        const boatContainer = new PIXI.Container();
-        boatLayer.addChild(boatContainer);
-
-        function drawBoat() {
-            const g = new PIXI.Graphics();
-            
-            // 船身 (红色)
-            g.beginFill(0xd32f2f);
-            g.drawRoundedRect(-25, -80, 50, 160, 25);
-            g.endFill();
-
-            // 船内深度感
-            g.beginFill(0x9a0007);
-            g.drawRect(-18, -60, 36, 120);
-            g.endFill();
-
-            // 龙纹装饰 (黄色)
-            g.lineStyle(3, 0xffeb3b);
-            g.moveTo(-25, -40).lineTo(25, -40);
-            g.moveTo(-25, 0).lineTo(25, 0);
-            g.moveTo(-25, 40).lineTo(25, 40);
-
-            // 龙头 (夸张化处理，确保能看清)
-            g.lineStyle(0);
-            g.beginFill(0xd32f2f);
-            g.drawEllipse(0, -95, 28, 35); // 脸部
-            g.endFill();
-            
-            // 龙眼睛
-            g.beginFill(0xffffff);
-            g.drawCircle(-10, -100, 6);
-            g.drawCircle(10, -100, 6);
-            g.endFill();
-            g.beginFill(0x000000);
-            g.drawCircle(-10, -100, 3);
-            g.drawCircle(10, -100, 3);
-            g.endFill();
-
-            // 龙角
-            g.lineStyle(5, 0x4e342e);
-            g.moveTo(-15, -115).lineTo(-25, -135);
-            g.moveTo(15, -115).lineTo(25, -135);
-
-            return g;
+        function updateBackground() {
+            bg.clear();
+            bg.lineStyle(2, 0x0099ee, 0.5);
+            const offset = (distance % 100);
+            for (let y = -100; y < app.screen.height + 100; y += 100) {
+                for (let x = 0; x < app.screen.width; x += 100) {
+                    bg.moveTo(x, y + offset);
+                    bg.bezierCurveTo(x + 25, y - 20 + offset, x + 75, y + 20 + offset, x + 100, y + offset);
+                }
+            }
         }
 
-        const boatBody = drawBoat();
+        // 3. 绘制龙舟
+        const boatContainer = new PIXI.Container();
+        app.stage.addChild(boatContainer);
+
+        const boatBody = new PIXI.Graphics();
+        // 船身
+        boatBody.beginFill(0xd32f2f);
+        boatBody.drawRoundedRect(-25, -80, 50, 160, 25);
+        boatBody.endFill();
+        // 内部
+        boatBody.beginFill(0x9a0007);
+        boatBody.drawRect(-18, -60, 36, 120);
+        boatBody.endFill();
+        // 龙头
+        boatBody.beginFill(0xd32f2f);
+        boatBody.drawEllipse(0, -95, 28, 35);
+        boatBody.endFill();
+        // 眼睛
+        boatBody.beginFill(0xffffff);
+        boatBody.drawCircle(-10, -100, 6); boatBody.drawCircle(10, -100, 6);
+        boatBody.beginFill(0x000000);
+        boatBody.drawCircle(-10, -100, 3); boatBody.drawCircle(10, -100, 3);
+        // 龙角
+        boatBody.lineStyle(5, 0x4e342e);
+        boatBody.moveTo(-15, -115).lineTo(-25, -135);
+        boatBody.moveTo(15, -115).lineTo(25, -135);
+        
         boatContainer.addChild(boatBody);
 
-        // 船桨绘制
-        const oarStyle = (side) => {
-            const oar = new PIXI.Graphics();
-            oar.beginFill(0x795548);
-            if(side === 'left') oar.drawRect(-50, -5, 50, 10);
-            else oar.drawRect(0, -5, 50, 10);
-            oar.endFill();
-            return oar;
-        };
-
-        const leftOar = oarStyle('left');
+        // 船桨
+        const leftOar = new PIXI.Graphics();
+        leftOar.beginFill(0x795548).drawRect(-50, -5, 50, 10).endFill();
         leftOar.position.set(-25, 20);
-        const rightOar = oarStyle('right');
+        
+        const rightOar = new PIXI.Graphics();
+        rightOar.beginFill(0x795548).drawRect(0, -5, 50, 10).endFill();
         rightOar.position.set(25, 20);
         
         boatContainer.addChild(leftOar, rightOar);
 
-        // 设置龙舟位置
+        // 初始化位置
         boatContainer.x = app.screen.width / 2;
         boatContainer.y = app.screen.height - 200;
 
         // 终点线
         const finishLine = new PIXI.Graphics();
         finishLine.beginFill(0xffffff).drawRect(0, 0, app.screen.width, 40).endFill();
-        finishLine.y = -100;
+        finishLine.visible = false;
         app.stage.addChild(finishLine);
 
-        // --- 4. 游戏逻辑 ---
+        // 4. 逻辑控制
         function preStart() {
             document.getElementById('start-btn').style.display = 'none';
             const cdText = document.getElementById('countdown');
@@ -208,10 +161,7 @@
                 count--;
                 if (count > 0) cdText.innerText = count;
                 else if (count === 0) cdText.innerText = "GO!";
-                else {
-                    clearInterval(timer);
-                    startGame();
-                }
+                else { clearInterval(timer); startGame(); }
             }, 1000);
         }
 
@@ -244,32 +194,27 @@
             }
         }
 
-        // 逐帧渲染
         app.ticker.add(() => {
+            updateBackground();
+
             if (!isGaming || finished) {
-                // 未开始时微弱起伏
                 boatContainer.y = (app.screen.height - 200) + Math.sin(Date.now() / 600) * 5;
                 return;
-            };
+            }
 
-            speed *= 0.97; // 阻力
+            speed *= 0.97; 
             distance += speed;
-            
-            // 背景滚动
-            water.tilePosition.y += speed;
 
-            // 更新 UI
             const now = (Date.now() - startTime) / 1000;
             document.getElementById('time').innerText = now.toFixed(2);
             const p = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
             document.getElementById('prog').innerText = p;
 
-            // 终点线
             if(distance > TOTAL_DIST - app.screen.height) {
+                finishLine.visible = true;
                 finishLine.y = (TOTAL_DIST - distance);
             }
 
-            // 龙舟物理动效
             boatContainer.scale.x += (1 - boatContainer.scale.x) * 0.1;
             boatContainer.scale.y += (1 - boatContainer.scale.y) * 0.1;
             boatContainer.rotation = Math.sin(Date.now() / 100) * (0.01 + speed * 0.001);
@@ -299,8 +244,6 @@
 
         window.addEventListener('resize', () => {
             app.renderer.resize(window.innerWidth, window.innerHeight);
-            water.width = app.screen.width;
-            water.height = app.screen.height;
             boatContainer.x = app.screen.width / 2;
         });
     </script>
