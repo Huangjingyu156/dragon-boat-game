@@ -9,24 +9,27 @@
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #0088cc; touch-action: none; font-family: "Microsoft YaHei", sans-serif; }
         
+        /* 确保画布在底层 */
+        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+
         /* 顶部 UI */
-        #ui-header { position: absolute; top: env(safe-area-inset-top, 0); width: 100%; height: 80px; background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent); color: white; display: flex; justify-content: space-around; align-items: center; z-index: 10; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
+        #ui-header { position: absolute; top: env(safe-area-inset-top, 10px); width: 100%; height: 80px; background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent); color: white; display: flex; justify-content: space-around; align-items: center; z-index: 10; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
         .stat-item { text-align: center; }
         .stat-label { font-size: 12px; opacity: 0.8; }
         .stat-value { font-size: 24px; font-weight: bold; font-variant-numeric: tabular-nums; }
 
-        /* 底部控制按钮 - 针对移动端深度优化 */
+        /* 底部控制按钮 */
         .controls { 
             position: fixed; 
-            bottom: env(safe-area-inset-bottom, 30px); /* 适配全面屏底栏 */
+            bottom: env(safe-area-inset-bottom, 20px);
             bottom: 40px; 
             left: 0;
             width: 100%; 
-            display: none; /* 初始隐藏 */
+            display: none; 
             justify-content: space-around; 
             padding: 0 15px; 
             box-sizing: border-box; 
-            z-index: 9999; /* 极高层级，确保在 PixiJS 之上 */
+            z-index: 9999; 
             opacity: 0; 
             transition: opacity 0.3s;
             pointer-events: none;
@@ -39,18 +42,18 @@
             pointer-events: auto; 
             -webkit-tap-highlight-color: transparent;
             user-select: none;
-            touch-action: manipulation; /* 禁用缩放手势提高响应速度 */
+            touch-action: manipulation;
         }
         .paddle-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #e67e22; background: #f39c12; }
         .btn-icon { font-size: 28px; margin-bottom: 2px; pointer-events: none; }
 
         /* 遮罩层 */
-        #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
+        #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
         #start-btn { padding: 15px 50px; font-size: 24px; font-weight: bold; color: white; background: #ff9f1c; border: none; border-radius: 50px; box-shadow: 0 6px 0 #e67e22; cursor: pointer; }
         #countdown { display: none; font-size: 100px; font-weight: bold; color: #fff; }
         
         /* 结算弹窗 */
-        #result-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10001; justify-content: center; align-items: center; }
+        #result-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10001; justify-content: center; align-items: center; }
         .modal-content { background: #fff; width: 85%; padding: 30px; border-radius: 20px; text-align: center; }
         .score-display { font-size: 48px; color: #e63946; font-weight: bold; margin: 20px 0; }
         input { width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 10px; font-size: 18px; box-sizing: border-box; }
@@ -60,7 +63,8 @@
 <body>
 
     <div id="start-overlay">
-        <h1 style="margin-bottom: 30px;">端午龙舟赛</h1>
+        <h1 style="margin-bottom: 10px;">端午龙舟赛</h1>
+        <p style="margin-bottom: 30px; opacity: 0.8;">交替点击左右桨加速！</p>
         <button id="start-btn" onclick="preStart()">开始挑战</button>
         <div id="countdown">3</div>
     </div>
@@ -114,17 +118,29 @@
         });
         document.body.appendChild(app.view);
 
+        // 背景：水流
         const water = new PIXI.TilingSprite(PIXI.Texture.WHITE, app.screen.width, app.screen.height);
         water.tint = 0x0077be;
         app.stage.addChild(water);
 
+        // 龙舟容器
         const boat = new PIXI.Container();
         const boatShape = new PIXI.Graphics();
+        // 船身
         boatShape.beginFill(0xcc3300).drawRoundedRect(-20, -70, 40, 140, 20).endFill(); 
-        boatShape.beginFill(0xffd700).drawCircle(0, -60, 15).endFill(); 
+        // 船头（装饰）
+        boatShape.beginFill(0xffd700).moveTo(-15, -60).lineTo(0, -90).lineTo(15, -60).closePath().endFill();
+        // 鼓
+        boatShape.beginFill(0x333333).drawCircle(0, 0, 10).endFill(); 
+        
         boat.addChild(boatShape);
-        boat.x = app.screen.width / 2;
-        boat.y = app.screen.height - 350; // 稍微上移，给底部按钮留出视觉空间
+        
+        // 初始位置设置在屏幕宽度的中间，高度的 70% 处
+        const resetBoatPosition = () => {
+            boat.x = app.screen.width / 2;
+            boat.y = app.screen.height * 0.7; 
+        };
+        resetBoatPosition();
         app.stage.addChild(boat);
 
         function preStart() {
@@ -148,7 +164,7 @@
             document.getElementById('ui-header').style.opacity = '1';
             
             const controls = document.getElementById('game-controls');
-            controls.style.display = 'flex'; // 显式显示
+            controls.style.display = 'flex'; 
             setTimeout(() => {
                 controls.style.opacity = '1';
                 controls.style.pointerEvents = 'auto';
@@ -164,32 +180,30 @@
         function handlePaddle(side) {
             if (!isGaming || finished) return;
             if (side !== lastSide) {
-                speed += 6.0; // 针对移动端节奏略微调高动力
-                boat.scale.set(1.2, 0.8);
+                speed += 6.5; // 稍微增加动力感
+                boat.scale.set(1.1, 0.9);
             } else {
-                speed += 0.5; 
+                speed += 0.8; // 惩罚性动力减弱
             }
             lastSide = side;
         }
 
-        const btnLeft = document.getElementById('btn-left');
-        const btnRight = document.getElementById('btn-right');
-
-        // 使用 pointerdown 兼顾触摸屏和鼠标
-        const addControlEvent = (el, side) => {
+        // 事件监听
+        const addControlEvent = (id, side) => {
+            const el = document.getElementById(id);
             el.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 handlePaddle(side);
             });
         };
+        addControlEvent('btn-left', 'left');
+        addControlEvent('btn-right', 'right');
 
-        addControlEvent(btnLeft, 'left');
-        addControlEvent(btnRight, 'right');
-
+        // 游戏循环
         app.ticker.add(() => {
             if (!isGaming || finished) return;
 
-            speed *= 0.94; 
+            speed *= 0.95; 
             distance += speed;
             water.tilePosition.y += speed; 
 
@@ -206,9 +220,11 @@
                 showResult(now.toFixed(2));
             }
 
+            // 弹性动画回复
             boat.scale.x += (1 - boat.scale.x) * 0.1;
             boat.scale.y += (1 - boat.scale.y) * 0.1;
-            boat.x = (app.screen.width / 2) + Math.sin(Date.now() / 400) * 4;
+            // 左右轻微摆动
+            boat.x = (app.screen.width / 2) + Math.sin(Date.now() / 300) * 5;
         });
 
         function showResult(s) {
@@ -222,27 +238,28 @@
             if (!name) return alert("请输入姓名！");
 
             const btn = document.querySelector('.submit-btn');
-            btn.innerText = "上传中...";
+            btn.innerText = "提交中...";
             btn.disabled = true;
 
             try {
                 const { error } = await sb.from('ranks').insert([{ nickname: name, score: score }]);
                 if (error) throw error;
-                alert("成绩提交成功！");
+                alert("提交成功！");
                 location.reload();
             } catch (err) {
-                alert("提交失败，请重试");
-                btn.innerText = "重新提交";
+                console.error(err);
+                alert("提交失败");
+                btn.innerText = "重试";
                 btn.disabled = false;
             }
         }
 
-        // 处理屏幕尺寸变化
+        // 窗口尺寸自适应
         window.addEventListener('resize', () => {
             app.renderer.resize(window.innerWidth, window.innerHeight);
             water.width = app.screen.width;
             water.height = app.screen.height;
-            boat.x = app.screen.width / 2;
+            resetBoatPosition();
         });
     </script>
 </body>
