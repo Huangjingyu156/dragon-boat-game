@@ -6,37 +6,13 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
-        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: relative; }
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         button { background: #ff4d4d; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-
-        /* 新数据提示条样式 */
-        #new-data-alert {
-            display: none;
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #007bff;
-            color: white;
-            padding: 12px 25px;
-            border-radius: 50px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            z-index: 1000;
-            cursor: pointer;
-            animation: slideDown 0.3s ease-out;
-            font-weight: bold;
-        }
-        @keyframes slideDown {
-            from { top: -60px; opacity: 0; }
-            to { top: 20px; opacity: 1; }
-        }
     </style>
 </head>
 <body>
-    <div id="new-data-alert" onclick="location.reload()">✨ 检测到新成绩，请点击此处刷新查看</div>
-
     <div class="card">
         <h1>活动后台数据</h1>
         <p>此页面仅供工作人员使用。</p>
@@ -46,34 +22,45 @@
         <table id="dataTable">
             <thead><tr><th>排名</th><th>昵称</th><th>成绩</th><th>提交时间</th></tr></thead>
             <tbody id="dataBody">
-            </tbody>
+                </tbody>
         </table>
     </div>
 
     <script>
+        // --- 1. 配置云数据库 ---
         const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co'; 
         const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx'; 
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         const TABLE_NAME = 'ranks'; 
 
-        let lastCount = -1; // 初始设为-1，确保第一次加载后能正确赋值
+        let lastCount = -1; // 用于记录当前显示的数据量
 
-        // --- 加载数据 ---
-        async function loadData() {
-            const { data, error } = await sb
-                .from(TABLE_NAME)
-                .select('*', { count: 'exact' }) 
-                .order('score', { ascending: true });
+        // --- 2. 核心：加载与自动同步函数 ---
+        async function syncData() {
+            try {
+                // 获取最新数据总量和内容
+                const { data, error } = await sb
+                    .from(TABLE_NAME)
+                    .select('*')
+                    .order('score', { ascending: true });
 
-            if (error) {
-                console.error("加载失败:", error.message);
-                return;
+                if (error) throw error;
+
+                const currentCount = data ? data.length : 0;
+
+                // 只有当数据总量发生变化时（新增或删除），才重新渲染表格
+                if (currentCount !== lastCount) {
+                    renderTable(data);
+                    lastCount = currentCount;
+                    console.log("检测到数据变动，后台列表已自动更新");
+                }
+            } catch (err) {
+                console.error("同步数据出错:", err.message);
             }
+        }
 
-            // 更新当前页面已知的数据总量
-            lastCount = data ? data.length : 0;
-            document.getElementById('new-data-alert').style.display = 'none';
-
+        // 渲染表格的独立函数
+        function renderTable(data) {
             const body = document.getElementById('dataBody');
             if (!data || data.length === 0) {
                 body.innerHTML = '<tr><td colspan="4" style="text-align:center;">目前暂无挑战记录</td></tr>';
@@ -90,58 +77,71 @@
             `).join('');
         }
 
-        // --- 核心监控逻辑 ---
-        async function checkNewData() {
-            // 如果数据还没初始化完成，跳过检查
-            if (lastCount === -1) return;
+        // --- 3. 清空数据功能 ---
+        async function clearData() {
+            if (confirm("确定要永久清空所有排行榜数据吗？此操作不可撤销！")) {
+                const { error } = await sb
+                    .from(TABLE_NAME)
+                    .delete()
+                    .neq('id', 0);
 
-            // 使用 count: 'exact' 直接获取数据库总量
-            const { count, error } = await sb
-                .from(TABLE_NAME)
-                .select('*', { count: 'exact', head: true });
-
-            if (!error && count !== null) {
-                // 如果数据库记录数 大于 页面显示的记录数
-                if (count > lastCount) {
-                    document.getElementById('new-data-alert').style.display = 'block';
-                    console.log("发现新数据，已弹出提示");
+                if (error) {
+                    alert("清空失败: " + error.message);
+                } else {
+                    alert("已成功清空所有数据");
+                    syncData(); // 立即同步一次
                 }
             }
         }
 
-        // --- 其他功能 ---
-        async function clearData() {
-            if (confirm("确定要清空吗？")) {
-                const { error } = await sb.from(TABLE_NAME).delete().neq('id', 0);
-                if (!error) { alert("已清空"); loadData(); }
-            }
-        }
-
+        // --- 4. 导出数据功能 ---
         async function exportData() {
             const btn = document.querySelector('button[onclick="exportData()"]');
-            btn.disabled = true;
+            const originalText = btn.innerText;
+            
             try {
-                const { data } = await sb.from(TABLE_NAME).select('nickname, score, created_at').order('score', { ascending: true });
+                btn.innerText = "正在导出...";
+                btn.disabled = true;
+
+                const { data, error } = await sb
+                    .from(TABLE_NAME)
+                    .select('nickname, score, created_at')
+                    .order('score', { ascending: true });
+
+                if (error) throw error;
+                if (!data || data.length === 0) {
+                    alert("目前没有数据可以导出！");
+                    return;
+                }
+
                 const excelData = data.map((item, index) => ({
                     "排名": index + 1,
                     "选手昵称": item.nickname || "匿名",
                     "比赛成绩(秒)": parseFloat(item.score).toFixed(2),
                     "提交时间": new Date(item.created_at).toLocaleString()
                 }));
+
                 const worksheet = XLSX.utils.json_to_sheet(excelData);
                 const workbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(workbook, worksheet, "成绩单");
-                XLSX.writeFile(workbook, `成绩导出_${Date.now()}.xlsx`);
+                XLSX.utils.book_append_sheet(workbook, worksheet, "龙舟赛成绩单");
+
+                const fileName = `龙舟赛成绩导出_${new Date().getTime()}.xlsx`;
+                XLSX.writeFile(workbook, fileName);
+
+            } catch (err) {
+                console.error("导出失败:", err);
+                alert("导出失败，请检查网络");
             } finally {
+                btn.innerText = originalText;
                 btn.disabled = false;
             }
         }
 
-        // 初始加载
-        loadData();
+        // 页面打开时立即执行
+        syncData();
 
-        // 缩短检查间隔到 3 秒，确保更及时
-        setInterval(checkNewData, 3000);
+        // 像大屏一样，每隔 3 秒自动检查一次数据变动
+        setInterval(syncData, 3000);
     </script>
 </body>
 </html>
