@@ -6,13 +6,36 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
-        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: relative; }
         button { background: #ff4d4d; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+
+        /* 新增：新数据提示条样式 */
+        #new-data-alert {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #007bff;
+            color: white;
+            padding: 12px 25px;
+            border-radius: 50px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1000;
+            cursor: pointer;
+            animation: slideDown 0.3s ease-out;
+        }
+        @keyframes slideDown {
+            from { top: -60px; opacity: 0; }
+            to { top: 20px; opacity: 1; }
+        }
     </style>
 </head>
 <body>
+    <div id="new-data-alert" onclick="location.reload()">✨ 有新数据产生，请点击或刷新查看</div>
+
     <div class="card">
         <h1>活动后台数据</h1>
         <p>此页面仅供工作人员使用。</p>
@@ -27,20 +50,20 @@
     </div>
 
     <script>
-        // --- 1. 配置云数据库 (已根据你的项目截图修正) ---
-        const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co'; // 你的项目 URL
-        const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx'; // 你的 Anon Key
+        // --- 1. 配置云数据库 ---
+        const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co'; 
+        const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx'; 
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-        // 你的数据库表名
         const TABLE_NAME = 'ranks'; 
+
+        let lastCount = 0; // 用于记录当前页面已加载的数据条数
 
         // --- 2. 加载数据函数 ---
         async function loadData() {
-            const { data, error } = await sb
+            const { data, error, count } = await sb
                 .from(TABLE_NAME)
-                .select('*')
-                .order('score', { ascending: true }); // 按成绩升序排列
+                .select('*', { count: 'exact' }) // 获取总行数
+                .order('score', { ascending: true });
 
             if (error) {
                 console.error("加载数据出错:", error.message);
@@ -48,13 +71,16 @@
                 return;
             }
 
+            // 更新当前记录数，并隐藏提示
+            lastCount = data ? data.length : 0;
+            document.getElementById('new-data-alert').style.display = 'none';
+
             const body = document.getElementById('dataBody');
             if (!data || data.length === 0) {
                 body.innerHTML = '<tr><td colspan="4" style="text-align:center;">目前暂无挑战记录</td></tr>';
                 return;
             }
 
-            // 渲染数据到表格
             body.innerHTML = data.map((item, i) => `
                 <tr>
                     <td>${i + 1}</td>
@@ -65,19 +91,34 @@
             `).join('');
         }
 
+        // --- 新增：监控新数据逻辑 ---
+        async function checkNewData() {
+            const { data, error } = await sb
+                .from(TABLE_NAME)
+                .select('id', { count: 'exact', head: true }); // 只取行数，不取具体内容，节省流量
+
+            if (!error && data !== null) {
+                const currentCount = data.length || 0; 
+                // 如果数据库里的数据比当前页面记录的多，则显示提示
+                if (currentCount > lastCount && lastCount !== 0) {
+                    document.getElementById('new-data-alert').style.display = 'block';
+                }
+            }
+        }
+
         // --- 3. 清空数据功能 ---
         async function clearData() {
             if (confirm("确定要永久清空所有排行榜数据吗？此操作不可撤销！")) {
                 const { error } = await sb
                     .from(TABLE_NAME)
                     .delete()
-                    .neq('id', 0); // 删除所有 ID 不为 0 的行
+                    .neq('id', 0);
 
                 if (error) {
                     alert("清空失败: " + error.message);
                 } else {
                     alert("已成功清空所有数据");
-                    loadData(); // 重新刷新列表
+                    loadData(); 
                 }
             }
         }
@@ -91,7 +132,6 @@
                 btn.innerText = "正在导出...";
                 btn.disabled = true;
 
-                // 1. 从数据库获取最新完整数据
                 const { data, error } = await sb
                     .from(TABLE_NAME)
                     .select('nickname, score, created_at')
@@ -103,7 +143,6 @@
                     return;
                 }
 
-                // 2. 格式化数据，让 Excel 表头更好看
                 const excelData = data.map((item, index) => ({
                     "排名": index + 1,
                     "选手昵称": item.nickname || "匿名",
@@ -111,12 +150,10 @@
                     "提交时间": new Date(item.created_at).toLocaleString()
                 }));
 
-                // 3. 使用 XLSX 库生成文件
                 const worksheet = XLSX.utils.json_to_sheet(excelData);
                 const workbook = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(workbook, worksheet, "龙舟赛成绩单");
 
-                // 4. 触发浏览器下载
                 const fileName = `龙舟赛成绩导出_${new Date().getTime()}.xlsx`;
                 XLSX.writeFile(workbook, fileName);
 
@@ -128,8 +165,12 @@
                 btn.disabled = false;
             }
         }
+
         // 页面打开时立即执行一次加载
         loadData();
+
+        // 每隔 3 秒检查一次是否有新数据产生
+        setInterval(checkNewData, 3000);
     </script>
 </body>
 </html>
