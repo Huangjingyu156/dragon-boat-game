@@ -118,27 +118,33 @@
     <div id="latest-news">新成绩！恭喜 <span>张三</span> 获得了榜首！</div>
 
     <script>
-        // --- 1. 配置云数据库 (需与 index.html 一致) ---
-        const SUPABASE_URL = 'https://您的项目ID.supabase.co';
-        const SUPABASE_KEY = '您的anon_key';
+        // --- 1. 配置云数据库 (已根据你的截图修正) ---
+        // 修正点：请确保 URL 和 KEY 与 index.html 完全一致
+        const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx';
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        let cachedData = []; // 用于对比是否有新数据
+        // 修正点：根据你的截图，数据库表名是 'dragon-boat' 而不是 'ranks'
+        const TABLE_NAME = 'dragon-boat'; 
+
+        let cachedData = []; 
 
         // --- 2. 更新排行榜数据 ---
         async function updateLeaderboard() {
             const { data, error } = await sb
-                .from('ranks')
+                .from(TABLE_NAME) // 使用正确的表名
                 .select('*')
-                .order('score', { ascending: true }) // 成绩越小排名越高
-                .limit(10); // 只显示前 10 名
+                .order('score', { ascending: true }) 
+                .limit(10); 
 
             if (error) {
-                console.error("加载失败:", error);
+                console.error("加载失败，请检查表名或API Key:", error);
+                // 在界面上显示错误，方便调试
+                document.getElementById('rank-container').innerHTML = `<div style="color:red; text-align:center; padding:50px;">连接失败: ${error.message}</div>`;
                 return;
             }
 
-            // 检查是否有新数据产生，用于弹出通知
+            // 检查是否有新数据产生
             if (cachedData.length > 0 && data.length > 0) {
                 if (data[0].id !== cachedData[0].id) {
                     showNotice(data[0].nickname);
@@ -146,13 +152,12 @@
             }
             cachedData = data;
 
-            // 渲染列表
             renderList(data);
         }
 
         function renderList(data) {
             const container = document.getElementById('rank-container');
-            if (data.length === 0) {
+            if (!data || data.length === 0) {
                 container.innerHTML = '<div style="text-align:center; padding:50px; font-size:30px; opacity:0.5;">等待第一位挑战者诞生...</div>';
                 return;
             }
@@ -162,8 +167,8 @@
             container.innerHTML = data.map((item, index) => `
                 <div class="rank-row ${index < 3 ? 'top-' + index : ''}">
                     <span class="medal">${medals[index]}</span>
-                    <span class="name">${item.nickname}</span>
-                    <span class="score">${item.score.toFixed(2)}s</span>
+                    <span class="name">${item.nickname || '匿名'}</span>
+                    <span class="score">${parseFloat(item.score).toFixed(2)}s</span>
                 </div>
             `).join('');
         }
@@ -179,11 +184,10 @@
         }
 
         // --- 4. 启动逻辑 ---
-        updateLeaderboard(); // 立即加载一次
+        updateLeaderboard(); 
         
-        // 建议每 3-5 秒请求一次，确保大屏实时性，同时不给数据库太大压力
+        // 每 3 秒自动刷新一次数据
         setInterval(updateLeaderboard, 3000);
-
     </script>
 </body>
 </html>
