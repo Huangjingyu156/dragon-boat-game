@@ -9,8 +9,16 @@
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #0088cc; touch-action: none; font-family: "Microsoft YaHei", sans-serif; }
         
-        /* 确保画布在底层 */
-        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+        /* 强制画布全屏并置于底层 */
+        canvas { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100vw; 
+            height: 100vh; 
+            z-index: 0; 
+            display: block;
+        }
 
         /* 顶部 UI */
         #ui-header { position: absolute; top: env(safe-area-inset-top, 10px); width: 100%; height: 80px; background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent); color: white; display: flex; justify-content: space-around; align-items: center; z-index: 10; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
@@ -18,10 +26,10 @@
         .stat-label { font-size: 12px; opacity: 0.8; }
         .stat-value { font-size: 24px; font-weight: bold; font-variant-numeric: tabular-nums; }
 
-        /* 底部控制按钮 */
+        /* 底部控制按钮 - 增加 Z-index 确保点击 */
         .controls { 
             position: fixed; 
-            bottom: env(safe-area-inset-bottom, 20px);
+            bottom: env(safe-area-inset-bottom, 30px);
             bottom: 40px; 
             left: 0;
             width: 100%; 
@@ -45,7 +53,6 @@
             touch-action: manipulation;
         }
         .paddle-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #e67e22; background: #f39c12; }
-        .btn-icon { font-size: 28px; margin-bottom: 2px; pointer-events: none; }
 
         /* 遮罩层 */
         #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
@@ -63,8 +70,7 @@
 <body>
 
     <div id="start-overlay">
-        <h1 style="margin-bottom: 10px;">端午龙舟赛</h1>
-        <p style="margin-bottom: 30px; opacity: 0.8;">交替点击左右桨加速！</p>
+        <h1 style="margin-bottom: 30px;">端午龙舟赛</h1>
         <button id="start-btn" onclick="preStart()">开始挑战</button>
         <div id="countdown">3</div>
     </div>
@@ -81,14 +87,8 @@
     </div>
 
     <div class="controls" id="game-controls">
-        <button class="paddle-btn" id="btn-left">
-            <span class="btn-icon">🚣</span>
-            <span>左桨</span>
-        </button>
-        <button class="paddle-btn" id="btn-right">
-            <span class="btn-icon">🚣</span>
-            <span>右桨</span>
-        </button>
+        <button class="paddle-btn" id="btn-left"><span>🚣</span><span>左桨</span></button>
+        <button class="paddle-btn" id="btn-right"><span>🚣</span><span>右桨</span></button>
     </div>
 
     <div id="result-modal">
@@ -108,13 +108,14 @@
         const TOTAL_DIST = 4000; 
         let distance = 0, speed = 0, startTime = 0, lastSide = '', finished = false, isGaming = false;
 
+        // 初始化 PixiJS，固定分辨率为 1 以解决移动端错位
         const app = new PIXI.Application({
             width: window.innerWidth,
             height: window.innerHeight,
             backgroundColor: 0x0088cc,
             antialias: true,
-            resolution: window.devicePixelRatio || 1,
-            autoDensity: true
+            resolution: 1, 
+            autoDensity: false
         });
         document.body.appendChild(app.view);
 
@@ -123,24 +124,17 @@
         water.tint = 0x0077be;
         app.stage.addChild(water);
 
-        // 龙舟容器
+        // 龙舟绘制：确保中心点在 (0,0)
         const boat = new PIXI.Container();
         const boatShape = new PIXI.Graphics();
-        // 船身
-        boatShape.beginFill(0xcc3300).drawRoundedRect(-20, -70, 40, 140, 20).endFill(); 
-        // 船头（装饰）
-        boatShape.beginFill(0xffd700).moveTo(-15, -60).lineTo(0, -90).lineTo(15, -60).closePath().endFill();
-        // 鼓
-        boatShape.beginFill(0x333333).drawCircle(0, 0, 10).endFill(); 
-        
+        boatShape.beginFill(0xcc3300).drawRoundedRect(-20, -70, 40, 140, 20).endFill(); // 船身
+        boatShape.beginFill(0xffd700).drawCircle(0, -50, 15).endFill(); // 船头
+        boatShape.beginFill(0x000000).drawRect(-2, -10, 4, 40).endFill(); // 鼓架
         boat.addChild(boatShape);
         
-        // 初始位置设置在屏幕宽度的中间，高度的 70% 处
-        const resetBoatPosition = () => {
-            boat.x = app.screen.width / 2;
-            boat.y = app.screen.height * 0.7; 
-        };
-        resetBoatPosition();
+        // 放置在屏幕中下方
+        boat.x = app.screen.width / 2;
+        boat.y = app.screen.height * 0.65;
         app.stage.addChild(boat);
 
         function preStart() {
@@ -152,24 +146,16 @@
                 count--;
                 if(count > 0) cd.innerText = count;
                 else if(count === 0) cd.innerText = "GO!";
-                else {
-                    clearInterval(timer);
-                    startGame();
-                }
+                else { clearInterval(timer); startGame(); }
             }, 1000);
         }
 
         function startGame() {
             document.getElementById('start-overlay').style.display = 'none';
             document.getElementById('ui-header').style.opacity = '1';
-            
-            const controls = document.getElementById('game-controls');
-            controls.style.display = 'flex'; 
-            setTimeout(() => {
-                controls.style.opacity = '1';
-                controls.style.pointerEvents = 'auto';
-            }, 50);
-            
+            const ctrl = document.getElementById('game-controls');
+            ctrl.style.display = 'flex';
+            setTimeout(() => { ctrl.style.opacity = '1'; ctrl.style.pointerEvents = 'auto'; }, 50);
             isGaming = true;
             finished = false;
             distance = 0;
@@ -180,51 +166,45 @@
         function handlePaddle(side) {
             if (!isGaming || finished) return;
             if (side !== lastSide) {
-                speed += 6.5; // 稍微增加动力感
-                boat.scale.set(1.1, 0.9);
+                speed += 7.0; 
+                boat.scale.set(1.2, 0.8);
             } else {
-                speed += 0.8; // 惩罚性动力减弱
+                speed += 0.5; 
             }
             lastSide = side;
         }
 
-        // 事件监听
-        const addControlEvent = (id, side) => {
-            const el = document.getElementById(id);
-            el.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                handlePaddle(side);
-            });
-        };
-        addControlEvent('btn-left', 'left');
-        addControlEvent('btn-right', 'right');
+        document.getElementById('btn-left').addEventListener('pointerdown', (e) => { e.preventDefault(); handlePaddle('left'); });
+        document.getElementById('btn-right').addEventListener('pointerdown', (e) => { e.preventDefault(); handlePaddle('right'); });
 
-        // 游戏循环
         app.ticker.add(() => {
-            if (!isGaming || finished) return;
+            // 每一帧都确保龙舟在水平正中间，防止 resize 失效
+            if (!isGaming) {
+                boat.x = app.screen.width / 2;
+                boat.y = app.screen.height * 0.65;
+                return;
+            }
+            if (finished) return;
 
-            speed *= 0.95; 
+            speed *= 0.94; 
             distance += speed;
             water.tilePosition.y += speed; 
 
             const now = (Date.now() - startTime) / 1000;
             document.getElementById('time').innerText = now.toFixed(2);
-            const p = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
-            document.getElementById('prog').innerText = p;
+            document.getElementById('prog').innerText = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
 
             if (distance >= TOTAL_DIST) {
                 finished = true;
                 isGaming = false;
                 document.getElementById('game-controls').style.opacity = '0';
-                document.getElementById('game-controls').style.pointerEvents = 'none';
                 showResult(now.toFixed(2));
             }
 
-            // 弹性动画回复
+            // 龙舟动画
             boat.scale.x += (1 - boat.scale.x) * 0.1;
             boat.scale.y += (1 - boat.scale.y) * 0.1;
-            // 左右轻微摆动
-            boat.x = (app.screen.width / 2) + Math.sin(Date.now() / 300) * 5;
+            boat.x = (app.screen.width / 2) + Math.sin(Date.now() / 400) * 4;
         });
 
         function showResult(s) {
@@ -236,30 +216,20 @@
             const name = document.getElementById('user-name').value.trim();
             const score = parseFloat(document.getElementById('final-time').innerText);
             if (!name) return alert("请输入姓名！");
-
-            const btn = document.querySelector('.submit-btn');
-            btn.innerText = "提交中...";
-            btn.disabled = true;
-
             try {
                 const { error } = await sb.from('ranks').insert([{ nickname: name, score: score }]);
                 if (error) throw error;
                 alert("提交成功！");
                 location.reload();
-            } catch (err) {
-                console.error(err);
-                alert("提交失败");
-                btn.innerText = "重试";
-                btn.disabled = false;
-            }
+            } catch (err) { alert("提交失败"); }
         }
 
-        // 窗口尺寸自适应
         window.addEventListener('resize', () => {
             app.renderer.resize(window.innerWidth, window.innerHeight);
             water.width = app.screen.width;
             water.height = app.screen.height;
-            resetBoatPosition();
+            boat.x = app.screen.width / 2;
+            boat.y = app.screen.height * 0.65;
         });
     </script>
 </body>
