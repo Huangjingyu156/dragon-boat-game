@@ -11,7 +11,7 @@
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
 
-        /* 新增：新数据提示条样式 */
+        /* 新数据提示条样式 */
         #new-data-alert {
             display: none;
             position: fixed;
@@ -22,10 +22,11 @@
             color: white;
             padding: 12px 25px;
             border-radius: 50px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             z-index: 1000;
             cursor: pointer;
             animation: slideDown 0.3s ease-out;
+            font-weight: bold;
         }
         @keyframes slideDown {
             from { top: -60px; opacity: 0; }
@@ -34,7 +35,7 @@
     </style>
 </head>
 <body>
-    <div id="new-data-alert" onclick="location.reload()">✨ 有新数据产生，请点击或刷新查看</div>
+    <div id="new-data-alert" onclick="location.reload()">✨ 检测到新成绩，请点击此处刷新查看</div>
 
     <div class="card">
         <h1>活动后台数据</h1>
@@ -45,33 +46,31 @@
         <table id="dataTable">
             <thead><tr><th>排名</th><th>昵称</th><th>成绩</th><th>提交时间</th></tr></thead>
             <tbody id="dataBody">
-                </tbody>
+            </tbody>
         </table>
     </div>
 
     <script>
-        // --- 1. 配置云数据库 ---
         const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co'; 
         const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx'; 
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         const TABLE_NAME = 'ranks'; 
 
-        let lastCount = 0; // 用于记录当前页面已加载的数据条数
+        let lastCount = -1; // 初始设为-1，确保第一次加载后能正确赋值
 
-        // --- 2. 加载数据函数 ---
+        // --- 加载数据 ---
         async function loadData() {
-            const { data, error, count } = await sb
+            const { data, error } = await sb
                 .from(TABLE_NAME)
-                .select('*', { count: 'exact' }) // 获取总行数
+                .select('*', { count: 'exact' }) 
                 .order('score', { ascending: true });
 
             if (error) {
-                console.error("加载数据出错:", error.message);
-                document.getElementById('dataBody').innerHTML = `<tr><td colspan="4" style="color:red;text-align:center;">加载失败: ${error.message}</td></tr>`;
+                console.error("加载失败:", error.message);
                 return;
             }
 
-            // 更新当前记录数，并隐藏提示
+            // 更新当前页面已知的数据总量
             lastCount = data ? data.length : 0;
             document.getElementById('new-data-alert').style.display = 'none';
 
@@ -91,85 +90,57 @@
             `).join('');
         }
 
-        // --- 新增：监控新数据逻辑 ---
+        // --- 核心监控逻辑 ---
         async function checkNewData() {
-            const { data, error } = await sb
+            // 如果数据还没初始化完成，跳过检查
+            if (lastCount === -1) return;
+
+            // 使用 count: 'exact' 直接获取数据库总量
+            const { count, error } = await sb
                 .from(TABLE_NAME)
-                .select('id', { count: 'exact', head: true }); // 只取行数，不取具体内容，节省流量
+                .select('*', { count: 'exact', head: true });
 
-            if (!error && data !== null) {
-                const currentCount = data.length || 0; 
-                // 如果数据库里的数据比当前页面记录的多，则显示提示
-                if (currentCount > lastCount && lastCount !== 0) {
+            if (!error && count !== null) {
+                // 如果数据库记录数 大于 页面显示的记录数
+                if (count > lastCount) {
                     document.getElementById('new-data-alert').style.display = 'block';
+                    console.log("发现新数据，已弹出提示");
                 }
             }
         }
 
-        // --- 3. 清空数据功能 ---
+        // --- 其他功能 ---
         async function clearData() {
-            if (confirm("确定要永久清空所有排行榜数据吗？此操作不可撤销！")) {
-                const { error } = await sb
-                    .from(TABLE_NAME)
-                    .delete()
-                    .neq('id', 0);
-
-                if (error) {
-                    alert("清空失败: " + error.message);
-                } else {
-                    alert("已成功清空所有数据");
-                    loadData(); 
-                }
+            if (confirm("确定要清空吗？")) {
+                const { error } = await sb.from(TABLE_NAME).delete().neq('id', 0);
+                if (!error) { alert("已清空"); loadData(); }
             }
         }
 
-        // --- 4. 导出数据功能 ---
         async function exportData() {
             const btn = document.querySelector('button[onclick="exportData()"]');
-            const originalText = btn.innerText;
-            
+            btn.disabled = true;
             try {
-                btn.innerText = "正在导出...";
-                btn.disabled = true;
-
-                const { data, error } = await sb
-                    .from(TABLE_NAME)
-                    .select('nickname, score, created_at')
-                    .order('score', { ascending: true });
-
-                if (error) throw error;
-                if (!data || data.length === 0) {
-                    alert("目前没有数据可以导出！");
-                    return;
-                }
-
+                const { data } = await sb.from(TABLE_NAME).select('nickname, score, created_at').order('score', { ascending: true });
                 const excelData = data.map((item, index) => ({
                     "排名": index + 1,
                     "选手昵称": item.nickname || "匿名",
                     "比赛成绩(秒)": parseFloat(item.score).toFixed(2),
                     "提交时间": new Date(item.created_at).toLocaleString()
                 }));
-
                 const worksheet = XLSX.utils.json_to_sheet(excelData);
                 const workbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(workbook, worksheet, "龙舟赛成绩单");
-
-                const fileName = `龙舟赛成绩导出_${new Date().getTime()}.xlsx`;
-                XLSX.writeFile(workbook, fileName);
-
-            } catch (err) {
-                console.error("导出失败:", err);
-                alert("导出失败，请检查网络或控制台错误");
+                XLSX.utils.book_append_sheet(workbook, worksheet, "成绩单");
+                XLSX.writeFile(workbook, `成绩导出_${Date.now()}.xlsx`);
             } finally {
-                btn.innerText = originalText;
                 btn.disabled = false;
             }
         }
 
-        // 页面打开时立即执行一次加载
+        // 初始加载
         loadData();
 
-        // 每隔 3 秒检查一次是否有新数据产生
+        // 缩短检查间隔到 3 秒，确保更及时
         setInterval(checkNewData, 3000);
     </script>
 </body>
