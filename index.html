@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>端午龙舟竞速挑战赛</title>
-    <!-- 替换为稳定国内CDN的Pixi.js -->
-    <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/pixi.js/7.2.4/pixi.min.js"></script>
+    <script src="https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/pixi.js/7.2.4/pixi.min.js"></script>
+    <script src="https://lf26-cdn-tos.bytecdntp.com/cdn/expire-1-M/supabase/2.0.0-rc.10/supabase.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #0088cc; touch-action: none; font-family: "Microsoft YaHei", sans-serif; }
         
@@ -34,7 +34,6 @@
         input { width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 10px; font-size: 18px; box-sizing: border-box; }
         .submit-btn { width: 100%; background: #e63946; color: white; border: none; padding: 15px; border-radius: 10px; font-size: 20px; font-weight: bold; }
 
-        /* 强制 Canvas 撑满屏幕且置于底层 */
         #game-canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
     </style>
 </head>
@@ -70,21 +69,25 @@
     </div>
 
     <script>
-        // --- 容错处理：移除不稳定的Supabase依赖，避免阻塞游戏启动 ---
         let sb = null;
+        try {
+            if (typeof supabase !== 'undefined') {
+                const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co';
+                const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx';
+                sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            }
+        } catch(e) { console.error("数据库初始化异常", e); }
 
         const TOTAL_DIST = 5000; 
         let distance = 0, speed = 0, startTime = 0, lastSide = '', finished = false, isGaming = false;
         
         let app, boatContainer, finishLine, bgLayer;
 
-        // 核心修改：等待整个网页（包括图片、尺寸）完全加载后再启动引擎
         window.addEventListener('load', initGame);
 
         function initGame() {
-            // 1. 初始化 Pixi，增加 resizeTo 以自动管理宽高
             app = new PIXI.Application({
-                resizeTo: window, // 自动填满屏幕，防止计算为 0
+                resizeTo: window,
                 backgroundColor: 0x00aaff,
                 antialias: true,
                 resolution: window.devicePixelRatio || 1,
@@ -93,10 +96,8 @@
             app.view.id = 'game-canvas';
             document.body.appendChild(app.view);
 
-            // 2. 绘制静态背景（避免逐帧重绘导致显存崩溃）
             bgLayer = new PIXI.Graphics();
             bgLayer.lineStyle(2, 0x0099ee, 0.5);
-            // 只画一次网格状的波纹，高度画得非常长，通过上下平移来实现滚动感
             for (let y = -200; y < window.innerHeight + 1000; y += 100) {
                 for (let x = 0; x < window.innerWidth + 200; x += 100) {
                     bgLayer.moveTo(x, y);
@@ -105,69 +106,49 @@
             }
             app.stage.addChild(bgLayer);
 
-            // 3. 绘制龙舟（修复：确保图形绘制顺序和可见性）
+            // ========== 重新绘制【极简正常显示的龙舟】 ==========
             boatContainer = new PIXI.Container();
-            app.stage.addChild(boatContainer);
 
-            const boatBody = new PIXI.Graphics();
-            // 船身
-            boatBody.beginFill(0xd32f2f);
-            boatBody.drawRoundedRect(-25, -80, 50, 160, 25);
-            boatBody.endFill();
-            // 内部
-            boatBody.beginFill(0x9a0007);
-            boatBody.drawRect(-18, -60, 36, 120);
-            boatBody.endFill();
+            // 简易大红龙舟 保证看得见
+            let boat = new PIXI.Graphics();
+            boat.beginFill(0xe62e2e);
+            boat.drawRoundedRect(-60, -25, 120, 50, 15);
+            boat.endFill();
+
             // 龙头
-            boatBody.beginFill(0xd32f2f);
-            boatBody.drawEllipse(0, -95, 28, 35);
-            boatBody.endFill();
-            // 眼睛
-            boatBody.beginFill(0xffffff);
-            boatBody.drawCircle(-10, -100, 6); 
-            boatBody.drawCircle(10, -100, 6);
-            boatBody.endFill(); // 修复：必须调用endFill()结束眼睛绘制
-            boatBody.beginFill(0x000000);
-            boatBody.drawCircle(-10, -100, 3); 
-            boatBody.drawCircle(10, -100, 3);
-            boatBody.endFill(); // 修复：必须调用endFill()结束眼珠绘制
-            // 龙角
-            boatBody.lineStyle(5, 0x4e342e);
-            boatBody.moveTo(-15, -115).lineTo(-25, -135);
-            boatBody.moveTo(15, -115).lineTo(25, -135);
-            
-            boatContainer.addChild(boatBody);
+            boat.beginFill(0xb71c1c);
+            boat.drawCircle(0, -35, 25);
+            boat.endFill();
 
-            // 船桨
-            const leftOar = new PIXI.Graphics();
-            leftOar.beginFill(0x795548).drawRect(-50, -5, 50, 10).endFill();
-            leftOar.position.set(-25, 20);
-            
-            const rightOar = new PIXI.Graphics();
-            rightOar.beginFill(0x795548).drawRect(0, -5, 50, 10).endFill();
-            rightOar.position.set(25, 20);
-            
-            boatContainer.addChild(leftOar, rightOar);
+            // 简单船桨
+            let leftOar = new PIXI.Graphics();
+            leftOar.beginFill(0x8B4513);
+            leftOar.drawRect(-70, -5, 35, 8);
+            leftOar.endFill();
 
-            // 初始化中心坐标（修复：确保位置在可视区域内）
+            let rightOar = new PIXI.Graphics();
+            rightOar.beginFill(0x8B4513);
+            rightOar.drawRect(35, -5, 35, 8);
+            rightOar.endFill();
+
+            boatContainer.addChild(boat, leftOar, rightOar);
+
+            // 固定屏幕中间下方 百分百可见
             boatContainer.x = window.innerWidth / 2;
-            boatContainer.y = window.innerHeight / 2; // 改为屏幕中间，避免被挤出可视区
-            boatContainer.scale.set(0.8); // 缩小一点，方便显示
-            // 确保龙舟在顶层
+            boatContainer.y = window.innerHeight - 180;
             boatContainer.zIndex = 10;
             app.stage.sortableChildren = true;
+            app.stage.addChild(boatContainer);
+            // =================================================
 
-            // 终点线
             finishLine = new PIXI.Graphics();
             finishLine.beginFill(0xffffff).drawRect(0, 0, 2000, 40).endFill();
             finishLine.visible = false;
             app.stage.addChild(finishLine);
 
-            // 挂载渲染循环
             app.ticker.add(gameLoop);
         }
 
-        // 4. 逻辑控制
         function preStart() {
             document.getElementById('start-btn').style.display = 'none';
             const cdText = document.getElementById('countdown');
@@ -189,56 +170,57 @@
             startTime = Date.now();
         }
 
-        // 修复：handlePaddle函数和Pixi对象的绑定问题
+        // ========== 修复划桨点击生效 + 简单前进 ==========
         function handlePaddle(side, event) {
             if (event) event.preventDefault();
-            if (!isGaming || finished || !boatContainer) return;
+            if (!isGaming || finished) return;
 
-            // 修复：船桨索引对应问题，boatContainer.children[0]是船身，[1]左桨，[2]右桨
-            const targetOar = side === 'left' ? boatContainer.children[1] : boatContainer.children[2];
-            
-            if (side !== lastSide) {
-                speed += 8.0; 
-                boatContainer.scale.set(1.1, 0.9);
-            } else {
-                speed += 1.5;
+            // 左右桨差异化加速
+            if(side !== lastSide){
+                speed += 6;
+            }else{
+                speed += 2;
             }
             lastSide = side;
 
-            // 船桨动画
-            targetOar.rotation = side === 'left' ? 0.7 : -0.7;
-            setTimeout(() => {
-                if (targetOar) targetOar.rotation = 0;
-            }, 100);
+            // 船桨摆动
+            if(side === "left"){
+                boatContainer.children[1].rotation = 0.6;
+                setTimeout(()=>boatContainer.children[1].rotation = 0, 120);
+            }else{
+                boatContainer.children[2].rotation = -0.6;
+                setTimeout(()=>boatContainer.children[2].rotation = 0, 120);
+            }
         }
 
         function gameLoop() {
-            // 背景视觉平移，不消耗重新计算路径的性能
             bgLayer.y = distance % 100;
 
             if (!isGaming || finished) {
-                boatContainer.y = (window.innerHeight / 2) + Math.sin(Date.now() / 600) * 5;
+                boatContainer.y += Math.sin(Date.now() / 500) * 0.02;
                 return;
             }
 
-            speed *= 0.97; 
+            // 阻力减速
+            speed *= 0.96;
             distance += speed;
 
+            // 时间&进度
             const now = (Date.now() - startTime) / 1000;
             document.getElementById('time').innerText = now.toFixed(2);
             const p = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
             document.getElementById('prog').innerText = p;
 
+            // 终点线
             if(distance > TOTAL_DIST - window.innerHeight) {
                 finishLine.visible = true;
-                finishLine.y = (TOTAL_DIST - distance);
+                finishLine.y = TOTAL_DIST - distance;
             }
 
-            // 修复：龙舟前进逻辑（原代码位置未更新，导致船不动）
-            boatContainer.y = (window.innerHeight / 2) + Math.cos(Date.now() / 150) * 4 - (distance * 0.1);
-            boatContainer.scale.x += (1 - boatContainer.scale.x) * 0.1;
-            boatContainer.scale.y += (1 - boatContainer.scale.y) * 0.1;
-            boatContainer.rotation = Math.sin(Date.now() / 100) * (0.01 + speed * 0.001);
+            // 龙舟向上前进（核心：原来没动就是没改y）
+            boatContainer.y = window.innerHeight - 180 - distance * 0.08;
+            // 轻微晃动模拟划船
+            boatContainer.rotation = Math.sin(Date.now()/120) * 0.02;
 
             if (distance >= TOTAL_DIST) {
                 finished = true;
@@ -253,14 +235,20 @@
             document.getElementById('controls').style.opacity = '0';
         }
 
-        function saveResult() {
+        async function saveResult() {
             const name = document.getElementById('user-name').value.trim();
             const score = parseFloat(document.getElementById('final-time').innerText);
             if (!name) return alert("请输入姓名！");
             
-            // 简化提交逻辑，先本地提示
-            alert("成绩保存成功！\n姓名：" + name + " \n成绩：" + score + "秒");
-            location.reload();
+            if(!sb) {
+                alert("数据库加载失败，仅本地显示：\n姓名：" + name + " \n成绩：" + score + "秒");
+                location.reload();
+                return;
+            }
+
+            const { error } = await sb.from('ranks').insert([{ nickname: name, score: score }]);
+            if (error) alert("提交失败");
+            else location.reload();
         }
 
         window.addEventListener('resize', () => {
