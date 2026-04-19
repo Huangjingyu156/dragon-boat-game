@@ -59,7 +59,7 @@
             border-bottom: 1px solid rgba(255,255,255,0.05);
             font-size: 36px;
             transition: all 0.5s ease;
-            /* 仅在元素创建时执行一次动画 */
+            /* 动画仅在 innerHTML 改变导致 DOM 重建时触发 */
             animation: fadeIn 0.8s ease-out forwards;
         }
 
@@ -124,38 +124,44 @@
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const TABLE_NAME = 'ranks';
-        let cachedDataJson = ""; // 改用字符串存储方便快速比对
+        let cachedDataJson = ""; 
 
         async function updateLeaderboard() {
-            const { data, error } = await sb
-                .from(TABLE_NAME)
-                .select('*')
-                .order('score', { ascending: true }) 
-                .limit(10); 
+            try {
+                const { data, error } = await sb
+                    .from(TABLE_NAME)
+                    .select('*')
+                    .order('score', { ascending: true }) 
+                    .limit(10); 
 
-            if (error) {
-                console.error("加载失败:", error);
-                return;
-            }
+                if (error) throw error;
 
-            // --- 核心优化部分：比对数据是否真正变化 ---
-            const newDataJson = JSON.stringify(data);
-            
-            if (newDataJson !== cachedDataJson) {
-                // 如果是第一次加载以外的更新，检查是否有新的第一名
-                if (cachedDataJson !== "" && data.length > 0) {
-                    const oldData = JSON.parse(cachedDataJson);
-                    if (oldData.length > 0 && data[0].id !== oldData[0].id) {
-                        showNotice(data[0].nickname);
+                // 将获取的数据转为字符串进行比对
+                const newDataJson = JSON.stringify(data);
+                
+                // 核心改动：只有在 JSON 字符串不一致时才进行任何操作
+                if (newDataJson !== cachedDataJson) {
+                    
+                    // 检查是否产生了新的第一名（非首次加载时）
+                    if (cachedDataJson !== "") {
+                        const oldData = JSON.parse(cachedDataJson);
+                        if (data.length > 0 && oldData.length > 0 && data[0].id !== oldData[0].id) {
+                            showNotice(data[0].nickname);
+                        }
                     }
-                }
 
-                // 只有数据变了，才执行渲染（触发动画）
-                renderList(data);
-                cachedDataJson = newDataJson;
-            } else {
-                // 数据没变，静默退出，不刷新界面，因此不会触发渐显动画
-                console.log("数据未变化，保持不动");
+                    // 执行渲染（重建 DOM，触发 fadeIn 动画）
+                    renderList(data);
+                    
+                    // 更新缓存
+                    cachedDataJson = newDataJson;
+                    console.log("数据已更新，执行刷新动画");
+                } else {
+                    // 数据一致，跳过所有逻辑，界面不会闪烁或重绘
+                    console.log("数据一致，保持静默");
+                }
+            } catch (e) {
+                console.error("数据拉取失败:", e);
             }
         }
 
@@ -168,7 +174,7 @@
 
             const medals = ["🥇", "🥈", "🥉", "4", "5", "6", "7", "8", "9", "10"];
 
-            // 重新填充 HTML 会触发 CSS 的 fadeIn 动画
+            // 仅在此时更新 innerHTML
             container.innerHTML = data.map((item, index) => `
                 <div class="rank-row ${index < 3 ? 'top-' + index : ''}">
                     <span class="medal">${medals[index]}</span>
@@ -189,7 +195,8 @@
 
         // 启动逻辑
         updateLeaderboard(); 
-        // 轮询：每 3 秒检测一次数据库
+        
+        // 轮询：每 3 秒检测一次
         setInterval(updateLeaderboard, 3000);
     </script>
 </body>
