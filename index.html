@@ -4,59 +4,42 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>端午龙舟竞速挑战赛</title>
-    <script src="https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/pixi.js/7.2.4/pixi.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/pixi.js/7.2.4/pixi.min.js"></script>
     <script src="https://lf26-cdn-tos.bytecdntp.com/cdn/expire-1-M/supabase/2.0.0-rc.10/supabase.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #0088cc; touch-action: none; font-family: "Microsoft YaHei", sans-serif; }
-        
         #ui-header { position: absolute; top: 0; width: 100%; height: 80px; background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent); color: white; display: flex; justify-content: space-around; align-items: center; z-index: 10; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
         .stat-item { text-align: center; }
         .stat-label { font-size: 12px; opacity: 0.8; }
         .stat-value { font-size: 24px; font-weight: bold; font-variant-numeric: tabular-nums; }
-
-        .controls { position: fixed; bottom: 5%; width: 100%; display: flex; justify-content: space-around; z-index: 100; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
-        .paddle-btn {
-            width: 100px; height: 100px; background-color: #ffcc00; border: 5px solid #fff; border-radius: 20px;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            box-shadow: 0 8px 0 #cc9900; pointer-events: auto; -webkit-user-select: none; user-select: none; cursor: pointer;
-        }
-        .paddle-btn:active { transform: translateY(4px); box-shadow: 0 4px 0 #cc9900; background: #ffaa00; }
-        .paddle-icon { font-size: 40px; margin-bottom: 2px; pointer-events: none; }
-        .paddle-text { font-size: 14px; color: #333; font-weight: bold; pointer-events: none; }
-
         #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 200; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
         #start-btn { padding: 15px 50px; font-size: 24px; font-weight: bold; color: white; background: #ff9f1c; border: none; border-radius: 50px; box-shadow: 0 6px 0 #e67e22; cursor: pointer; }
+        #start-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #e67e22; }
         #countdown { display: none; font-size: 120px; font-weight: bold; color: #fff; text-shadow: 0 0 20px rgba(0,0,0,0.5); }
-
-        #result-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 300; justify-content: center; align-items: center; }
+        #guide { position: fixed; bottom: 15%; width: 100%; text-align: center; color: white; z-index: 5; pointer-events: none; display: none; }
+        #result-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; justify-content: center; align-items: center; }
         .modal-content { background: #fff; width: 85%; padding: 30px; border-radius: 20px; text-align: center; box-sizing: border-box; }
         .score-display { font-size: 48px; color: #e63946; font-weight: bold; margin: 20px 0; }
-        input { width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 10px; font-size: 18px; box-sizing: border-box; }
-        .submit-btn { width: 100%; background: #e63946; color: white; border: none; padding: 15px; border-radius: 10px; font-size: 20px; font-weight: bold; }
-
-        #game-canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+        input { width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 10px; font-size: 18px; box-sizing: border-box; outline: none; }
+        .submit-btn { width: 100%; background: #e63946; color: white; border: none; padding: 15px; border-radius: 10px; font-size: 20px; font-weight: bold; box-shadow: 0 4px 0 #b2202c; }
     </style>
 </head>
 <body>
 
     <div id="start-overlay">
-        <h1 style="margin-bottom: 40px;">端午龙舟赛</h1>
+        <h1 style="margin-bottom: 40px; text-shadow: 0 4px 10px rgba(0,0,0,0.3);">端午龙舟赛</h1>
         <button id="start-btn" onclick="preStart()">开始游戏</button>
         <div id="countdown">3</div>
     </div>
 
     <div id="ui-header">
-        <div class="stat-item"><div class="stat-label">完成进度</div><div class="stat-value"><span id="prog">0</span>%</div></div>
-        <div class="stat-item"><div class="stat-label">当前耗时</div><div class="stat-value"><span id="time">0.00</span>s</div></div>
+        <div class="stat-item"><div class="stat-label">进度</div><div class="stat-value"><span id="prog">0</span>%</div></div>
+        <div class="stat-item"><div class="stat-label">耗时</div><div class="stat-value"><span id="time">0.00</span>s</div></div>
     </div>
 
-    <div class="controls" id="controls">
-        <div class="paddle-btn" ontouchstart="handlePaddle('left', event)" onmousedown="handlePaddle('left')">
-            <div class="paddle-icon">🚣</div><div class="paddle-text">左桨</div>
-        </div>
-        <div class="paddle-btn" ontouchstart="handlePaddle('right', event)" onmousedown="handlePaddle('right')">
-            <div class="paddle-icon">🚣</div><div class="paddle-text">右桨</div>
-        </div>
+    <div id="guide">
+        <div style="font-size: 18px; margin-bottom: 10px;">快速左右交替点击</div>
+        <div style="font-size: 30px;">👈 🚣 👉</div>
     </div>
 
     <div id="result-modal">
@@ -69,85 +52,33 @@
     </div>
 
     <script>
-        let sb = null;
-        try {
-            if (typeof supabase !== 'undefined') {
-                const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co';
-                const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx';
-                sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            }
-        } catch(e) { console.error("数据库初始化异常", e); }
+        // 数据库配置
+        const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx';
+        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        const TOTAL_DIST = 5000; 
+        const TOTAL_DIST = 4000; 
         let distance = 0, speed = 0, startTime = 0, lastSide = '', finished = false, isGaming = false;
-        
-        let app, boatContainer, finishLine, bgLayer;
 
-        window.addEventListener('load', initGame);
+        const app = new PIXI.Application({
+            width: window.innerWidth, height: window.innerHeight,
+            backgroundColor: 0x0088cc, antialias: true,
+            resolution: window.devicePixelRatio || 1
+        });
+        document.body.appendChild(app.view);
 
-        function initGame() {
-            app = new PIXI.Application({
-                resizeTo: window,
-                backgroundColor: 0x00aaff,
-                antialias: true,
-                resolution: window.devicePixelRatio || 1,
-                autoDensity: true
-            });
-            app.view.id = 'game-canvas';
-            document.body.appendChild(app.view);
+        // 使用国内可访问的图片资源（由阿里 CDN 提供的占位图作为水纹参考，或者你可以换成你仓库里的图）
+        const waterTex = PIXI.Texture.from('https://img.alicdn.com/imgextra/i4/O1CN01f8S0pG1Z8XpXpXpXp_!!6000000003148-2-tps-200-200.png'); 
+        const water = new PIXI.TilingSprite(waterTex, app.screen.width, app.screen.height);
+        app.stage.addChild(water);
 
-            bgLayer = new PIXI.Graphics();
-            bgLayer.lineStyle(2, 0x0099ee, 0.5);
-            for (let y = -200; y < window.innerHeight + 1000; y += 100) {
-                for (let x = 0; x < window.innerWidth + 200; x += 100) {
-                    bgLayer.moveTo(x, y);
-                    bgLayer.bezierCurveTo(x + 25, y - 20, x + 75, y + 20, x + 100, y);
-                }
-            }
-            app.stage.addChild(bgLayer);
-
-            // ========== 重新绘制【极简正常显示的龙舟】 ==========
-            boatContainer = new PIXI.Container();
-
-            // 简易大红龙舟 保证看得见
-            let boat = new PIXI.Graphics();
-            boat.beginFill(0xe62e2e);
-            boat.drawRoundedRect(-60, -25, 120, 50, 15);
-            boat.endFill();
-
-            // 龙头
-            boat.beginFill(0xb71c1c);
-            boat.drawCircle(0, -35, 25);
-            boat.endFill();
-
-            // 简单船桨
-            let leftOar = new PIXI.Graphics();
-            leftOar.beginFill(0x8B4513);
-            leftOar.drawRect(-70, -5, 35, 8);
-            leftOar.endFill();
-
-            let rightOar = new PIXI.Graphics();
-            rightOar.beginFill(0x8B4513);
-            rightOar.drawRect(35, -5, 35, 8);
-            rightOar.endFill();
-
-            boatContainer.addChild(boat, leftOar, rightOar);
-
-            // 固定屏幕中间下方 百分百可见
-            boatContainer.x = window.innerWidth / 2;
-            boatContainer.y = window.innerHeight - 180;
-            boatContainer.zIndex = 10;
-            app.stage.sortableChildren = true;
-            app.stage.addChild(boatContainer);
-            // =================================================
-
-            finishLine = new PIXI.Graphics();
-            finishLine.beginFill(0xffffff).drawRect(0, 0, 2000, 40).endFill();
-            finishLine.visible = false;
-            app.stage.addChild(finishLine);
-
-            app.ticker.add(gameLoop);
-        }
+        const boat = new PIXI.Container();
+        const boatShape = new PIXI.Graphics();
+        boatShape.beginFill(0xcc3300).drawRoundedRect(-20, -70, 40, 140, 20).endFill(); 
+        boatShape.beginFill(0xffd700).drawCircle(0, -60, 15).endFill(); 
+        boat.addChild(boatShape);
+        boat.x = app.screen.width / 2; boat.y = app.screen.height - 180;
+        app.stage.addChild(boat);
 
         function preStart() {
             document.getElementById('start-btn').style.display = 'none';
@@ -165,95 +96,44 @@
         function startGame() {
             document.getElementById('start-overlay').style.display = 'none';
             document.getElementById('ui-header').style.opacity = '1';
-            document.getElementById('controls').style.opacity = '1';
-            isGaming = true;
-            startTime = Date.now();
+            document.getElementById('guide').style.display = 'block';
+            isGaming = true; startTime = Date.now();
         }
 
-        // ========== 修复划桨点击生效 + 简单前进 ==========
-        function handlePaddle(side, event) {
-            if (event) event.preventDefault();
+        window.addEventListener('touchstart', (e) => {
             if (!isGaming || finished) return;
-
-            // 左右桨差异化加速
-            if(side !== lastSide){
-                speed += 6;
-            }else{
-                speed += 2;
-            }
+            document.getElementById('guide').style.display = 'none';
+            const side = e.touches[0].clientX < window.innerWidth / 2 ? 'left' : 'right';
+            if (side !== lastSide) { speed += 4.5; boat.scale.set(1.2, 0.8); }
+            else { speed += 0.5; }
             lastSide = side;
+        });
 
-            // 船桨摆动
-            if(side === "left"){
-                boatContainer.children[1].rotation = 0.6;
-                setTimeout(()=>boatContainer.children[1].rotation = 0, 120);
-            }else{
-                boatContainer.children[2].rotation = -0.6;
-                setTimeout(()=>boatContainer.children[2].rotation = 0, 120);
-            }
-        }
-
-        function gameLoop() {
-            bgLayer.y = distance % 100;
-
-            if (!isGaming || finished) {
-                boatContainer.y += Math.sin(Date.now() / 500) * 0.02;
-                return;
-            }
-
-            // 阻力减速
-            speed *= 0.96;
-            distance += speed;
-
-            // 时间&进度
+        app.ticker.add(() => {
+            if (!isGaming || finished) return;
+            speed *= 0.96; distance += speed; water.tilePosition.y += speed; 
             const now = (Date.now() - startTime) / 1000;
             document.getElementById('time').innerText = now.toFixed(2);
-            const p = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
-            document.getElementById('prog').innerText = p;
-
-            // 终点线
-            if(distance > TOTAL_DIST - window.innerHeight) {
-                finishLine.visible = true;
-                finishLine.y = TOTAL_DIST - distance;
-            }
-
-            // 龙舟向上前进（核心：原来没动就是没改y）
-            boatContainer.y = window.innerHeight - 180 - distance * 0.08;
-            // 轻微晃动模拟划船
-            boatContainer.rotation = Math.sin(Date.now()/120) * 0.02;
-
-            if (distance >= TOTAL_DIST) {
-                finished = true;
-                isGaming = false;
-                showResult(now.toFixed(2));
-            }
-        }
+            document.getElementById('prog').innerText = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
+            if (distance >= TOTAL_DIST) { finished = true; isGaming = false; showResult(now.toFixed(2)); }
+            boat.scale.x += (1 - boat.scale.x) * 0.1;
+            boat.scale.y += (1 - boat.scale.y) * 0.1;
+        });
 
         function showResult(s) {
             document.getElementById('final-time').innerText = s;
             document.getElementById('result-modal').style.display = 'flex';
-            document.getElementById('controls').style.opacity = '0';
         }
 
         async function saveResult() {
             const name = document.getElementById('user-name').value.trim();
-            const score = parseFloat(document.getElementById('final-time').innerText);
-            if (!name) return alert("请输入姓名！");
-            
-            if(!sb) {
-                alert("数据库加载失败，仅本地显示：\n姓名：" + name + " \n成绩：" + score + "秒");
-                location.reload();
-                return;
-            }
-
-            const { error } = await sb.from('ranks').insert([{ nickname: name, score: score }]);
-            if (error) alert("提交失败");
-            else location.reload();
+            if (!name) return alert("请输入大名！");
+            const btn = document.querySelector('.submit-btn');
+            btn.innerText = "提交中..."; btn.disabled = true;
+            const { error } = await sb.from('ranks').insert([{ nickname: name, score: parseFloat(document.getElementById('final-time').innerText) }]);
+            if (error) { alert("提交失败"); btn.innerText = "重新提交"; btn.disabled = false; }
+            else { alert("提交成功！"); location.reload(); }
         }
-
-        window.addEventListener('resize', () => {
-            if (boatContainer) boatContainer.x = window.innerWidth / 2;
-        });
     </script>
 </body>
 </html>
