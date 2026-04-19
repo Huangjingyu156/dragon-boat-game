@@ -9,57 +9,30 @@
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #0088cc; touch-action: none; font-family: "Microsoft YaHei", sans-serif; }
         
-        /* 强制画布全屏并置于底层 */
+        /* 关键：强制 Canvas 撑满屏幕且不响应缩放干扰 */
         canvas { 
             position: absolute; 
             top: 0; 
             left: 0; 
-            width: 100vw; 
-            height: 100vh; 
+            width: 100% !important; 
+            height: 100% !important; 
             z-index: 0; 
             display: block;
         }
 
-        /* 顶部 UI */
         #ui-header { position: absolute; top: env(safe-area-inset-top, 10px); width: 100%; height: 80px; background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent); color: white; display: flex; justify-content: space-around; align-items: center; z-index: 10; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
         .stat-item { text-align: center; }
         .stat-label { font-size: 12px; opacity: 0.8; }
         .stat-value { font-size: 24px; font-weight: bold; font-variant-numeric: tabular-nums; }
 
-        /* 底部控制按钮 - 增加 Z-index 确保点击 */
-        .controls { 
-            position: fixed; 
-            bottom: env(safe-area-inset-bottom, 30px);
-            bottom: 40px; 
-            left: 0;
-            width: 100%; 
-            display: none; 
-            justify-content: space-around; 
-            padding: 0 15px; 
-            box-sizing: border-box; 
-            z-index: 9999; 
-            opacity: 0; 
-            transition: opacity 0.3s;
-            pointer-events: none;
-        }
-        .paddle-btn { 
-            width: 100px; height: 100px; background: #ff9f1c; color: white; border: none; 
-            border-radius: 50%; font-size: 18px; font-weight: bold; 
-            box-shadow: 0 6px 0 #e67e22; cursor: pointer; display: flex; 
-            flex-direction: column; align-items: center; justify-content: center;
-            pointer-events: auto; 
-            -webkit-tap-highlight-color: transparent;
-            user-select: none;
-            touch-action: manipulation;
-        }
+        .controls { position: fixed; bottom: 40px; left: 0; width: 100%; display: none; justify-content: space-around; padding: 0 15px; box-sizing: border-box; z-index: 9999; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+        .paddle-btn { width: 100px; height: 100px; background: #ff9f1c; color: white; border: none; border-radius: 50%; font-size: 18px; font-weight: bold; box-shadow: 0 6px 0 #e67e22; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; -webkit-tap-highlight-color: transparent; user-select: none; touch-action: manipulation; }
         .paddle-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #e67e22; background: #f39c12; }
 
-        /* 遮罩层 */
         #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
         #start-btn { padding: 15px 50px; font-size: 24px; font-weight: bold; color: white; background: #ff9f1c; border: none; border-radius: 50px; box-shadow: 0 6px 0 #e67e22; cursor: pointer; }
         #countdown { display: none; font-size: 100px; font-weight: bold; color: #fff; }
         
-        /* 结算弹窗 */
         #result-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10001; justify-content: center; align-items: center; }
         .modal-content { background: #fff; width: 85%; padding: 30px; border-radius: 20px; text-align: center; }
         .score-display { font-size: 48px; color: #e63946; font-weight: bold; margin: 20px 0; }
@@ -108,14 +81,14 @@
         const TOTAL_DIST = 4000; 
         let distance = 0, speed = 0, startTime = 0, lastSide = '', finished = false, isGaming = false;
 
-        // 初始化 PixiJS，固定分辨率为 1 以解决移动端错位
+        // 核心优化：固定 resolution 为 1，解决移动端逻辑像素与渲染像素不一致导致的消失
         const app = new PIXI.Application({
             width: window.innerWidth,
             height: window.innerHeight,
             backgroundColor: 0x0088cc,
             antialias: true,
             resolution: 1, 
-            autoDensity: false
+            autoDensity: true
         });
         document.body.appendChild(app.view);
 
@@ -124,18 +97,21 @@
         water.tint = 0x0077be;
         app.stage.addChild(water);
 
-        // 龙舟绘制：确保中心点在 (0,0)
+        // 龙舟绘制：Graphics 对象
         const boat = new PIXI.Container();
         const boatShape = new PIXI.Graphics();
         boatShape.beginFill(0xcc3300).drawRoundedRect(-20, -70, 40, 140, 20).endFill(); // 船身
         boatShape.beginFill(0xffd700).drawCircle(0, -50, 15).endFill(); // 船头
         boatShape.beginFill(0x000000).drawRect(-2, -10, 4, 40).endFill(); // 鼓架
         boat.addChild(boatShape);
-        
-        // 放置在屏幕中下方
-        boat.x = app.screen.width / 2;
-        boat.y = app.screen.height * 0.65;
         app.stage.addChild(boat);
+
+        // 初始设置位置
+        function resetBoatPosition() {
+            boat.x = app.screen.width / 2;
+            boat.y = app.screen.height * 0.7; // 放在屏幕 70% 的高度处
+        }
+        resetBoatPosition();
 
         function preStart() {
             document.getElementById('start-btn').style.display = 'none';
@@ -167,7 +143,7 @@
             if (!isGaming || finished) return;
             if (side !== lastSide) {
                 speed += 7.0; 
-                boat.scale.set(1.2, 0.8);
+                boat.scale.set(1.1, 0.9);
             } else {
                 speed += 0.5; 
             }
@@ -177,16 +153,18 @@
         document.getElementById('btn-left').addEventListener('pointerdown', (e) => { e.preventDefault(); handlePaddle('left'); });
         document.getElementById('btn-right').addEventListener('pointerdown', (e) => { e.preventDefault(); handlePaddle('right'); });
 
+        // 游戏主循环
         app.ticker.add(() => {
-            // 每一帧都确保龙舟在水平正中间，防止 resize 失效
+            // 每一帧都动态纠正龙舟中心点，防止屏幕翻转或 DPI 导致的偏离
+            boat.x = app.screen.width / 2;
+            
             if (!isGaming) {
-                boat.x = app.screen.width / 2;
-                boat.y = app.screen.height * 0.65;
+                boat.y = app.screen.height * 0.7;
                 return;
             }
             if (finished) return;
 
-            speed *= 0.94; 
+            speed *= 0.95; 
             distance += speed;
             water.tilePosition.y += speed; 
 
@@ -201,10 +179,11 @@
                 showResult(now.toFixed(2));
             }
 
-            // 龙舟动画
+            // 龙舟弹性恢复动画
             boat.scale.x += (1 - boat.scale.x) * 0.1;
             boat.scale.y += (1 - boat.scale.y) * 0.1;
-            boat.x = (app.screen.width / 2) + Math.sin(Date.now() / 400) * 4;
+            // 左右轻微摆动
+            boat.x += Math.sin(Date.now() / 200) * 2;
         });
 
         function showResult(s) {
@@ -224,12 +203,12 @@
             } catch (err) { alert("提交失败"); }
         }
 
+        // 监听窗口尺寸变化
         window.addEventListener('resize', () => {
             app.renderer.resize(window.innerWidth, window.innerHeight);
             water.width = app.screen.width;
             water.height = app.screen.height;
-            boat.x = app.screen.width / 2;
-            boat.y = app.screen.height * 0.65;
+            resetBoatPosition();
         });
     </script>
 </body>
