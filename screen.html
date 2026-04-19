@@ -59,6 +59,7 @@
             border-bottom: 1px solid rgba(255,255,255,0.05);
             font-size: 36px;
             transition: all 0.5s ease;
+            /* 仅在元素创建时执行一次动画 */
             animation: fadeIn 0.8s ease-out forwards;
         }
 
@@ -118,41 +119,44 @@
     <div id="latest-news">新成绩！恭喜 <span>张三</span> 获得了榜首！</div>
 
     <script>
-        // --- 1. 配置云数据库 (已根据你的截图修正) ---
-        // 修正点：请确保 URL 和 KEY 与 index.html 完全一致
         const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx';
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // 数据库表名
         const TABLE_NAME = 'ranks';
+        let cachedDataJson = ""; // 改用字符串存储方便快速比对
 
-        let cachedData = []; 
-
-        // --- 2. 更新排行榜数据 ---
         async function updateLeaderboard() {
             const { data, error } = await sb
-                .from(TABLE_NAME) // 使用正确的表名
+                .from(TABLE_NAME)
                 .select('*')
                 .order('score', { ascending: true }) 
                 .limit(10); 
 
             if (error) {
-                console.error("加载失败，请检查表名或API Key:", error);
-                // 在界面上显示错误，方便调试
-                document.getElementById('rank-container').innerHTML = `<div style="color:red; text-align:center; padding:50px;">连接失败: ${error.message}</div>`;
+                console.error("加载失败:", error);
                 return;
             }
 
-            // 检查是否有新数据产生
-            if (cachedData.length > 0 && data.length > 0) {
-                if (data[0].id !== cachedData[0].id) {
-                    showNotice(data[0].nickname);
+            // --- 核心优化部分：比对数据是否真正变化 ---
+            const newDataJson = JSON.stringify(data);
+            
+            if (newDataJson !== cachedDataJson) {
+                // 如果是第一次加载以外的更新，检查是否有新的第一名
+                if (cachedDataJson !== "" && data.length > 0) {
+                    const oldData = JSON.parse(cachedDataJson);
+                    if (oldData.length > 0 && data[0].id !== oldData[0].id) {
+                        showNotice(data[0].nickname);
+                    }
                 }
-            }
-            cachedData = data;
 
-            renderList(data);
+                // 只有数据变了，才执行渲染（触发动画）
+                renderList(data);
+                cachedDataJson = newDataJson;
+            } else {
+                // 数据没变，静默退出，不刷新界面，因此不会触发渐显动画
+                console.log("数据未变化，保持不动");
+            }
         }
 
         function renderList(data) {
@@ -164,6 +168,7 @@
 
             const medals = ["🥇", "🥈", "🥉", "4", "5", "6", "7", "8", "9", "10"];
 
+            // 重新填充 HTML 会触发 CSS 的 fadeIn 动画
             container.innerHTML = data.map((item, index) => `
                 <div class="rank-row ${index < 3 ? 'top-' + index : ''}">
                     <span class="medal">${medals[index]}</span>
@@ -173,7 +178,6 @@
             `).join('');
         }
 
-        // --- 3. 实时通知特效 ---
         function showNotice(name) {
             const el = document.getElementById('latest-news');
             el.querySelector('span').innerText = name;
@@ -183,10 +187,9 @@
             }, 5000);
         }
 
-        // --- 4. 启动逻辑 ---
+        // 启动逻辑
         updateLeaderboard(); 
-        
-        // 每 3 秒自动刷新一次数据
+        // 轮询：每 3 秒检测一次数据库
         setInterval(updateLeaderboard, 3000);
     </script>
 </body>
