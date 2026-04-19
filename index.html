@@ -8,109 +8,119 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #0088cc; touch-action: none; font-family: "Microsoft YaHei", sans-serif; }
+        
+        /* 顶部 UI */
         #ui-header { position: absolute; top: 0; width: 100%; height: 80px; background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent); color: white; display: flex; justify-content: space-around; align-items: center; z-index: 10; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
         .stat-item { text-align: center; }
         .stat-label { font-size: 12px; opacity: 0.8; }
         .stat-value { font-size: 24px; font-weight: bold; font-variant-numeric: tabular-nums; }
-        #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 200; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
+
+        /* 底部控制按钮 */
+        .controls { position: fixed; bottom: 8%; width: 100%; display: flex; justify-content: space-around; padding: 0 20px; box-sizing: border-box; z-index: 1000; opacity: 0; transition: opacity 0.5s; pointer-events: none; }
+        .paddle-btn { 
+            width: 110px; height: 110px; background: #ff9f1c; color: white; border: none; 
+            border-radius: 50%; font-size: 18px; font-weight: bold; 
+            box-shadow: 0 6px 0 #e67e22; cursor: pointer; display: flex; 
+            flex-direction: column; align-items: center; justify-content: center;
+            pointer-events: auto; /* 关键：允许点击 */
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        /* 激活状态的视觉反馈 */
+        .paddle-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #e67e22; background: #f39c12; }
+        .btn-icon { font-size: 28px; margin-bottom: 2px; pointer-events: none; }
+
+        /* 引导和遮罩 */
+        #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 2000; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
         #start-btn { padding: 15px 50px; font-size: 24px; font-weight: bold; color: white; background: #ff9f1c; border: none; border-radius: 50px; box-shadow: 0 6px 0 #e67e22; cursor: pointer; }
-        #countdown { display: none; font-size: 120px; font-weight: bold; color: #fff; text-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        #guide { position: fixed; bottom: 15%; width: 100%; text-align: center; color: white; z-index: 5; pointer-events: none; display: none; }
-        #result-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; justify-content: center; align-items: center; }
-        .modal-content { background: #fff; width: 85%; padding: 30px; border-radius: 20px; text-align: center; box-sizing: border-box; }
+        #countdown { display: none; font-size: 100px; font-weight: bold; color: #fff; }
+        
+        #result-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 3000; justify-content: center; align-items: center; }
+        .modal-content { background: #fff; width: 85%; padding: 30px; border-radius: 20px; text-align: center; }
         .score-display { font-size: 48px; color: #e63946; font-weight: bold; margin: 20px 0; }
-        input { width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 10px; font-size: 18px; box-sizing: border-box; outline: none; }
-        .submit-btn { width: 100%; background: #e63946; color: white; border: none; padding: 15px; border-radius: 10px; font-size: 20px; font-weight: bold; box-shadow: 0 4px 0 #b2202c; }
+        input { width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 10px; font-size: 18px; box-sizing: border-box; }
+        .submit-btn { width: 100%; background: #e63946; color: white; border: none; padding: 15px; border-radius: 10px; font-size: 20px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
 
     <div id="start-overlay">
-        <h1 style="margin-bottom: 40px; text-shadow: 0 4px 10px rgba(0,0,0,0.3);">端午龙舟赛</h1>
-        <button id="start-btn" onclick="preStart()">开始游戏</button>
+        <h1 style="margin-bottom: 30px;">端午龙舟赛</h1>
+        <button id="start-btn" onclick="preStart()">开始挑战</button>
         <div id="countdown">3</div>
     </div>
 
     <div id="ui-header">
         <div class="stat-item">
-            <div class="stat-label">进度</div>
+            <div class="stat-label">完成进度</div>
             <div class="stat-value"><span id="prog">0</span>%</div>
         </div>
         <div class="stat-item">
-            <div class="stat-label">耗时</div>
+            <div class="stat-label">用时</div>
             <div class="stat-value"><span id="time">0.00</span>s</div>
         </div>
     </div>
 
-    <div id="guide">
-        <div style="font-size: 18px; margin-bottom: 10px;">快速左右交替点击</div>
-        <div style="font-size: 30px;">👈 🚣 👉</div>
+    <div class="controls" id="game-controls">
+        <button class="paddle-btn" id="btn-left">
+            <span class="btn-icon">🚣</span>
+            <span>左桨</span>
+        </button>
+        <button class="paddle-btn" id="btn-right">
+            <span class="btn-icon">🚣</span>
+            <span>右桨</span>
+        </button>
     </div>
 
     <div id="result-modal">
         <div class="modal-content">
-            <h2 style="margin:0;">冲过终点！</h2>
+            <h2>冲过终点！</h2>
             <div class="score-display"><span id="final-time">0.00</span>s</div>
-            <input type="text" id="user-name" placeholder="请输入您的姓名" maxlength="6">
+            <input type="text" id="user-name" placeholder="请输入姓名" maxlength="6">
             <button class="submit-btn" onclick="saveResult()">提交成绩</button>
         </div>
     </div>
 
     <script>
-        // --- 1. 初始化云端数据库 (修正 SDK 调用方式) ---
         const SUPABASE_URL = 'https://hnppuispiploxwqwdfvm.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx';
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // --- 2. 游戏配置 ---
         const TOTAL_DIST = 4000; 
-        let distance = 0, speed = 0, startTime = 0, lastSide = '', finished = false;
-        let isGaming = false;
+        let distance = 0, speed = 0, startTime = 0, lastSide = '', finished = false, isGaming = false;
 
-        // --- 3. 初始化 PixiJS (修正 Canvas 挂载) ---
         const app = new PIXI.Application({
             width: window.innerWidth,
             height: window.innerHeight,
             backgroundColor: 0x0088cc,
             antialias: true,
-            resolution: window.devicePixelRatio || 1,
-            autoDensity: true
+            resolution: window.devicePixelRatio || 1
         });
         document.body.appendChild(app.view);
 
-        // 创建背景
-        const water = new PIXI.TilingSprite(
-            PIXI.Texture.WHITE, 
-            app.screen.width, 
-            app.screen.height
-        );
+        const water = new PIXI.TilingSprite(PIXI.Texture.WHITE, app.screen.width, app.screen.height);
         water.tint = 0x0077be;
         app.stage.addChild(water);
 
-        // 创建龙舟
         const boat = new PIXI.Container();
         const boatShape = new PIXI.Graphics();
         boatShape.beginFill(0xcc3300).drawRoundedRect(-20, -70, 40, 140, 20).endFill(); 
         boatShape.beginFill(0xffd700).drawCircle(0, -60, 15).endFill(); 
         boat.addChild(boatShape);
         boat.x = app.screen.width / 2;
-        boat.y = app.screen.height - 180;
+        boat.y = app.screen.height - 300; // 进一步上移，确保完全不被遮挡
         app.stage.addChild(boat);
 
-        // --- 4. 流程控制 ---
         function preStart() {
             document.getElementById('start-btn').style.display = 'none';
-            const cdText = document.getElementById('countdown');
-            cdText.style.display = 'block';
-            
+            const cd = document.getElementById('countdown');
+            cd.style.display = 'block';
             let count = 3;
-            const timer = setInterval(() => {
+            let timer = setInterval(() => {
                 count--;
-                if (count > 0) {
-                    cdText.innerText = count;
-                } else if (count === 0) {
-                    cdText.innerText = "GO!";
-                } else {
+                if(count > 0) cd.innerText = count;
+                else if(count === 0) cd.innerText = "GO!";
+                else {
                     clearInterval(timer);
                     startGame();
                 }
@@ -120,57 +130,64 @@
         function startGame() {
             document.getElementById('start-overlay').style.display = 'none';
             document.getElementById('ui-header').style.opacity = '1';
-            document.getElementById('guide').style.display = 'block';
+            const controls = document.getElementById('game-controls');
+            controls.style.opacity = '1';
+            controls.style.pointerEvents = 'auto'; // 激活按钮区域
             isGaming = true;
-            finished = false;
-            distance = 0;
-            speed = 0;
             startTime = Date.now();
         }
 
-        // --- 5. 交互逻辑 (支持点击和触摸) ---
-        const handleAction = (clientX) => {
+        // --- 核心修复：更健壮的按钮监听 ---
+        function handlePaddle(side) {
             if (!isGaming || finished) return;
-            
-            if(document.getElementById('guide').style.display !== 'none') {
-                document.getElementById('guide').style.display = 'none';
-            }
 
-            const side = clientX < window.innerWidth / 2 ? 'left' : 'right';
             if (side !== lastSide) {
-                speed += 5.0; // 增加基础推力
-                boat.scale.set(1.1, 0.9);
+                speed += 5.5; // 提高交替动力
+                boat.scale.set(1.2, 0.8);
             } else {
-                speed += 0.8; 
+                speed += 0.5; // 连点惩罚
             }
             lastSide = side;
+        }
+
+        // 使用 pointerdown 统一处理触摸和鼠标
+        const btnLeft = document.getElementById('btn-left');
+        const btnRight = document.getElementById('btn-right');
+
+        const attachEvent = (el, side) => {
+            el.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                handlePaddle(side);
+            });
         };
 
-        window.addEventListener('pointerdown', (e) => handleAction(e.clientX));
+        attachEvent(btnLeft, 'left');
+        attachEvent(btnRight, 'right');
 
-        // 游戏循环
         app.ticker.add(() => {
             if (!isGaming || finished) return;
 
-            speed *= 0.95; // 阻力
+            speed *= 0.94; // 稍微增加阻力感
             distance += speed;
             water.tilePosition.y += speed; 
 
             const now = (Date.now() - startTime) / 1000;
             document.getElementById('time').innerText = now.toFixed(2);
-            
             const p = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
             document.getElementById('prog').innerText = p;
 
             if (distance >= TOTAL_DIST) {
                 finished = true;
                 isGaming = false;
+                document.getElementById('game-controls').style.opacity = '0';
+                document.getElementById('game-controls').style.pointerEvents = 'none';
                 showResult(now.toFixed(2));
             }
 
-            // 恢复船只缩放
             boat.scale.x += (1 - boat.scale.x) * 0.1;
             boat.scale.y += (1 - boat.scale.y) * 0.1;
+            // 船头轻微左右晃动模拟水流
+            boat.x = (app.screen.width / 2) + Math.sin(Date.now() / 300) * 5;
         });
 
         function showResult(s) {
@@ -181,20 +198,19 @@
         async function saveResult() {
             const name = document.getElementById('user-name').value.trim();
             const score = parseFloat(document.getElementById('final-time').innerText);
-            
             if (!name) return alert("请输入姓名！");
 
             const btn = document.querySelector('.submit-btn');
-            btn.innerText = "提交中...";
+            btn.innerText = "上传中...";
             btn.disabled = true;
 
             try {
                 const { error } = await sb.from('ranks').insert([{ nickname: name, score: score }]);
                 if (error) throw error;
-                alert("提交成功！");
-                location.reload(); 
+                alert("成绩提交成功！");
+                location.reload();
             } catch (err) {
-                alert("提交失败: " + err.message);
+                alert("提交失败，请重试");
                 btn.innerText = "重新提交";
                 btn.disabled = false;
             }
