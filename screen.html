@@ -124,8 +124,8 @@
         const SUPABASE_KEY = 'sb_publishable_DaDWwW3v6QFfvRs-HvbzMA_fT8W_jsx';
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // 修正点：根据你的截图，数据库表名是 'dragon-boat' 而不是 'ranks'
-        const TABLE_NAME = 'dragon-boat'; 
+        // 数据库表名
+        const TABLE_NAME = 'ranks';
 
         let cachedData = []; 
 
