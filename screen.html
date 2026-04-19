@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>龙舟竞速挑战赛-实时英雄榜</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --primary: #ffca28;
+            --bg: #001f3f;
+        }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: white;
+            font-family: "Microsoft YaHei", sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+
+        /* 标题样式 */
+        header {
+            margin-top: 40px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 80px;
+            margin: 0;
+            color: var(--primary);
+            text-shadow: 0 0 30px rgba(255, 202, 40, 0.4);
+            letter-spacing: 10px;
+        }
+        .subtitle {
+            font-size: 24px;
+            opacity: 0.6;
+            margin-top: 10px;
+        }
+
+        /* 榜单容器 */
+        #rank-container {
+            width: 85%;
+            margin-top: 50px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 30px;
+            padding: 30px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* 每一行数据的样式 */
+        .rank-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 60px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 36px;
+            transition: all 0.5s ease;
+            animation: fadeIn 0.8s ease-out forwards;
+        }
+
+        /* 前三名特殊外观 */
+        .rank-row.top-0 { background: rgba(255, 202, 40, 0.15); font-size: 50px; font-weight: bold; color: #ffeb3b; }
+        .rank-row.top-1 { background: rgba(224, 224, 224, 0.1); font-size: 44px; }
+        .rank-row.top-2 { background: rgba(205, 127, 50, 0.1); font-size: 40px; }
+
+        .medal {
+            width: 60px;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .name {
+            flex: 1;
+            margin-left: 100px;
+            text-align: left;
+        }
+
+        .score {
+            font-family: "Courier New", Courier, monospace;
+            color: #00d2ff;
+            font-weight: bold;
+        }
+
+        /* 底部动态通知 */
+        #latest-news {
+            position: fixed;
+            bottom: 40px;
+            background: #e63946;
+            color: white;
+            padding: 10px 40px;
+            border-radius: 50px;
+            font-size: 24px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            display: none;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🐲 龙舟挑战赛英雄榜</h1>
+        <div class="subtitle">实时数据同步更新 · 看看谁是划船之王</div>
+    </header>
+
+    <div id="rank-container">
+        <div style="text-align:center; padding:50px; font-size:30px; opacity:0.5;">正在连接比赛数据中心...</div>
+    </div>
+
+    <div id="latest-news">新成绩！恭喜 <span>张三</span> 获得了榜首！</div>
+
+    <script>
+        // --- 1. 配置云数据库 (需与 index.html 一致) ---
+        const SUPABASE_URL = 'https://您的项目ID.supabase.co';
+        const SUPABASE_KEY = '您的anon_key';
+        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let cachedData = []; // 用于对比是否有新数据
+
+        // --- 2. 更新排行榜数据 ---
+        async function updateLeaderboard() {
+            const { data, error } = await sb
+                .from('ranks')
+                .select('*')
+                .order('score', { ascending: true }) // 成绩越小排名越高
+                .limit(10); // 只显示前 10 名
+
+            if (error) {
+                console.error("加载失败:", error);
+                return;
+            }
+
+            // 检查是否有新数据产生，用于弹出通知
+            if (cachedData.length > 0 && data.length > 0) {
+                if (data[0].id !== cachedData[0].id) {
+                    showNotice(data[0].nickname);
+                }
+            }
+            cachedData = data;
+
+            // 渲染列表
+            renderList(data);
+        }
+
+        function renderList(data) {
+            const container = document.getElementById('rank-container');
+            if (data.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:50px; font-size:30px; opacity:0.5;">等待第一位挑战者诞生...</div>';
+                return;
+            }
+
+            const medals = ["🥇", "🥈", "🥉", "4", "5", "6", "7", "8", "9", "10"];
+
+            container.innerHTML = data.map((item, index) => `
+                <div class="rank-row ${index < 3 ? 'top-' + index : ''}">
+                    <span class="medal">${medals[index]}</span>
+                    <span class="name">${item.nickname}</span>
+                    <span class="score">${item.score.toFixed(2)}s</span>
+                </div>
+            `).join('');
+        }
+
+        // --- 3. 实时通知特效 ---
+        function showNotice(name) {
+            const el = document.getElementById('latest-news');
+            el.querySelector('span').innerText = name;
+            el.style.display = 'block';
+            setTimeout(() => {
+                el.style.display = 'none';
+            }, 5000);
+        }
+
+        // --- 4. 启动逻辑 ---
+        updateLeaderboard(); // 立即加载一次
+        
+        // 建议每 3-5 秒请求一次，确保大屏实时性，同时不给数据库太大压力
+        setInterval(updateLeaderboard, 3000);
+
+    </script>
+</body>
+</html>

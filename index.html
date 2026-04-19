@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>端午龙舟竞速挑战赛</title>
+    <script src="https://pixijs.download/v7.x/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #0088cc; touch-action: none; font-family: "Microsoft YaHei", sans-serif; }
+        
+        /* 顶部 UI 栏 */
+        #ui-header { position: absolute; top: 0; width: 100%; height: 80px; background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent); color: white; display: flex; justify-content: space-around; align-items: center; z-index: 10; pointer-events: none; }
+        .stat-item { text-align: center; }
+        .stat-label { font-size: 12px; opacity: 0.8; }
+        .stat-value { font-size: 24px; font-weight: bold; font-variant-numeric: tabular-nums; }
+
+        /* 操作引导手势 */
+        #guide { position: fixed; bottom: 15%; width: 100%; text-align: center; color: white; z-index: 5; pointer-events: none; }
+        .hand-anim { width: 50px; animation: swipe 1.5s infinite; }
+        @keyframes swipe { 
+            0% { transform: translateX(-60px) opacity(0); }
+            50% { transform: translateX(0) opacity(1); }
+            100% { transform: translateX(60px) opacity(0); }
+        }
+
+        /* 结算弹窗 */
+        #result-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; justify-content: center; align-items: center; }
+        .modal-content { background: #fff; width: 85%; padding: 30px; border-radius: 20px; text-align: center; box-sizing: border-box; }
+        .score-display { font-size: 48px; color: #e63946; font-weight: bold; margin: 20px 0; }
+        input { width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 10px; font-size: 18px; box-sizing: border-box; outline: none; }
+        button { width: 100%; background: #e63946; color: white; border: none; padding: 15px; border-radius: 10px; font-size: 20px; font-weight: bold; box-shadow: 0 4px 0 #b2202c; }
+        button:active { transform: translateY(2px); box-shadow: none; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-header">
+        <div class="stat-item">
+            <div class="stat-label">进度</div>
+            <div class="stat-value"><span id="prog">0</span>%</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">耗时</div>
+            <div class="stat-value"><span id="time">0.00</span>s</div>
+        </div>
+    </div>
+
+    <div id="guide">
+        <div style="font-size: 18px; margin-bottom: 10px;">快速左右交替滑动</div>
+        <div style="font-size: 30px;">👈 🚣 👉</div>
+    </div>
+
+    <div id="result-modal">
+        <div class="modal-content">
+            <h2 style="margin:0;">冲过终点！</h2>
+            <div class="score-display"><span id="final-time">0.00</span>s</div>
+            <input type="text" id="user-name" placeholder="请输入您的姓名" maxlength="6">
+            <button onclick="saveResult()">提交成绩</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. 初始化云端数据库 (交给客户前务必填好) ---
+        const SUPABASE_URL = 'https://您的项目ID.supabase.co';
+        const SUPABASE_KEY = '您的anon_key';
+        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // --- 2. 游戏配置 ---
+        const TOTAL_DIST = 4000; // 赛道总长
+        let distance = 0, speed = 0, startTime = 0, lastSide = '', finished = false;
+
+        // --- 3. 初始化 PixiJS ---
+        const app = new PIXI.Application({
+            width: window.innerWidth,
+            height: window.innerHeight,
+            backgroundColor: 0x0088cc,
+            antialias: true,
+            resolution: window.devicePixelRatio || 1
+        });
+        document.body.appendChild(app.view);
+
+        // 加载水面贴图 (建议让客户把图片放在同级 images 文件夹)
+        const waterTex = PIXI.Texture.from('https://pixijs.com/assets/p2.jpeg'); 
+        const water = new PIXI.TilingSprite(waterTex, app.screen.width, app.screen.height);
+        app.stage.addChild(water);
+
+        // 创建龙舟
+        const boat = new PIXI.Container();
+        const boatShape = new PIXI.Graphics();
+        boatShape.beginFill(0xcc3300).drawRoundedRect(-20, -70, 40, 140, 20).endFill(); // 船身
+        boatShape.beginFill(0xffd700).drawCircle(0, -60, 15).endFill(); // 龙头
+        boat.addChild(boatShape);
+        boat.x = app.screen.width / 2;
+        boat.y = app.screen.height - 180;
+        app.stage.addChild(boat);
+
+        // --- 4. 交互逻辑 ---
+        window.addEventListener('touchstart', (e) => {
+            if (finished) return;
+            if (!startTime) startTime = Date.now();
+            document.getElementById('guide').style.display = 'none';
+
+            const side = e.touches[0].clientX < window.innerWidth / 2 ? 'left' : 'right';
+            if (side !== lastSide) {
+                speed += 4.0; // 交替划增加大量推力
+                boat.scale.set(1.2, 0.8); // 划桨动感
+            } else {
+                speed += 0.5; // 连滑一边推力极小
+            }
+            lastSide = side;
+        });
+
+        // 核心循环
+        app.ticker.add(() => {
+            if (finished) return;
+
+            speed *= 0.96; // 阻力
+            distance += speed;
+            water.tilePosition.y += speed; // 背景滚动
+
+            if (startTime) {
+                const now = (Date.now() - startTime) / 1000;
+                document.getElementById('time').innerText = now.toFixed(2);
+                const p = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
+                document.getElementById('prog').innerText = p;
+
+                if (distance >= TOTAL_DIST) {
+                    finished = true;
+                    showResult(now.toFixed(2));
+                }
+            }
+
+            // 龙舟形状回弹动画
+            boat.scale.x += (1 - boat.scale.x) * 0.1;
+            boat.scale.y += (1 - boat.scale.y) * 0.1;
+        });
+
+        function showResult(s) {
+            document.getElementById('final-time').innerText = s;
+            document.getElementById('result-modal').style.display = 'flex';
+        }
+
+        async function saveResult() {
+            const name = document.getElementById('user-name').value.trim();
+            const score = parseFloat(document.getElementById('final-time').innerText);
+            
+            if (!name) return alert("请输入大名！");
+
+            const btn = document.querySelector('button');
+            btn.innerText = "提交中...";
+            btn.disabled = true;
+
+            const { error } = await sb.from('ranks').insert([{ nickname: name, score: score }]);
+
+            if (error) {
+                alert("提交失败，请检查网络");
+                btn.innerText = "重新提交";
+                btn.disabled = false;
+            } else {
+                alert("提交成功！快看大屏排名！");
+                location.reload(); // 提交后重置，迎接下一个人
+            }
+        }
+    </script>
+</body>
+</html>

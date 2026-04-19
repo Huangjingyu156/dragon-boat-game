@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>活动管理后台</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        button { background: #ff4d4d; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>活动数据管理</h1>
+        <p>此页面仅供工作人员使用。</p>
+        <button onclick="clearData()" id="clearBtn">⚠️ 清空所有排行榜数据</button>
+        <button onclick="exportData()" style="background:#28a745">导出 Excel 成绩单</button>
+        
+        <table id="dataTable">
+            <thead><tr><th>排名</th><th>昵称</th><th>成绩</th><th>提交时间</th></tr></thead>
+            <tbody id="dataBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        // 初始化 Supabase (配置同上)
+        const supabase = supabase.createClient('URL', 'KEY');
+
+        async function loadData() {
+            const { data } = await supabase.from('ranks').select('*').order('score', { ascending: true });
+            document.getElementById('dataBody').innerHTML = data.map((item, i) => `
+                <tr><td>${i+1}</td><td>${item.nickname}</td><td>${item.score}s</td><td>${item.created_at}</td></tr>
+            `).join('');
+        }
+
+        async function clearData() {
+            if(confirm("确定要删除所有成绩吗？此操作不可撤销！")) {
+                const { error } = await supabase.from('ranks').delete().neq('id', 0); // 删除所有行
+                if(!error) { alert("已清空"); loadData(); }
+            }
+        }
+        
+        loadData();
+    </script>
+</body>
+</html>
