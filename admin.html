@@ -3,6 +3,7 @@
 <head>
     <title>活动管理后台</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
         .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -81,12 +82,52 @@
             }
         }
 
-        // --- 4. 导出数据 (简单提示) ---
-        function exportData() {
-            alert("正在准备数据导出的逻辑...");
-            // 此处通常需要引入 SheetJS 等库来实现真正的 Excel 下载
-        }
+        // --- 4. 导出数据功能 ---
+        async function exportData() {
+            const btn = document.querySelector('button[onclick="exportData()"]');
+            const originalText = btn.innerText;
+            
+            try {
+                btn.innerText = "正在导出...";
+                btn.disabled = true;
 
+                // 1. 从数据库获取最新完整数据
+                const { data, error } = await sb
+                    .from(TABLE_NAME)
+                    .select('nickname, score, created_at')
+                    .order('score', { ascending: true });
+
+                if (error) throw error;
+                if (!data || data.length === 0) {
+                    alert("目前没有数据可以导出！");
+                    return;
+                }
+
+                // 2. 格式化数据，让 Excel 表头更好看
+                const excelData = data.map((item, index) => ({
+                    "排名": index + 1,
+                    "选手昵称": item.nickname || "匿名",
+                    "比赛成绩(秒)": parseFloat(item.score).toFixed(2),
+                    "提交时间": new Date(item.created_at).toLocaleString()
+                }));
+
+                // 3. 使用 XLSX 库生成文件
+                const worksheet = XLSX.utils.json_to_sheet(excelData);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "龙舟赛成绩单");
+
+                // 4. 触发浏览器下载
+                const fileName = `龙舟赛成绩导出_${new Date().getTime()}.xlsx`;
+                XLSX.writeFile(workbook, fileName);
+
+            } catch (err) {
+                console.error("导出失败:", err);
+                alert("导出失败，请检查网络或控制台错误");
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
         // 页面打开时立即执行一次加载
         loadData();
     </script>
