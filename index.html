@@ -194,13 +194,36 @@
         async function saveResult() {
             const name = document.getElementById('user-name').value.trim();
             const score = parseFloat(document.getElementById('final-time').innerText);
+            
             if (!name) return alert("请输入姓名！");
+
             try {
-                const { error } = await sb.from('ranks').insert([{ nickname: name, score: score }]);
-                if (error) throw error;
+                // 1. 检查是否存在重复姓名
+                const { data: existingUser, error: checkError } = await sb
+                    .from('ranks')
+                    .select('nickname')
+                    .eq('nickname', name)
+                    .maybeSingle(); // 寻找单个匹配项
+
+                if (checkError) throw checkError;
+
+                if (existingUser) {
+                    return alert("该姓名已经提交过，不能重复提交！");
+                }
+
+                // 2. 如果不存在重复，则执行插入
+                const { error: insertError } = await sb
+                    .from('ranks')
+                    .insert([{ nickname: name, score: score }]);
+
+                if (insertError) throw insertError;
+
                 alert("提交成功！");
                 location.reload();
-            } catch (err) { alert("提交失败"); }
+            } catch (err) { 
+                console.error(err);
+                alert("提交失败，请重试"); 
+            }
         }
 
         // 监听窗口尺寸变化
