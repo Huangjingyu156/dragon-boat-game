@@ -8,17 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #0088cc; touch-action: none; font-family: "Microsoft YaHei", sans-serif; }
-        
-        /* 关键：强制 Canvas 撑满屏幕且不响应缩放干扰 */
-        canvas { 
-            position: absolute; 
-            top: 0; 
-            left: 0; 
-            width: 100% !important; 
-            height: 100% !important; 
-            z-index: 0; 
-            display: block;
-        }
+        canvas { position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important; z-index: 0; display: block; }
 
         #ui-header { position: absolute; top: env(safe-area-inset-top, 10px); width: 100%; height: 80px; background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent); color: white; display: flex; justify-content: space-around; align-items: center; z-index: 10; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
         .stat-item { text-align: center; }
@@ -32,17 +22,26 @@
         #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
         #start-btn { padding: 15px 50px; font-size: 24px; font-weight: bold; color: white; background: #ff9f1c; border: none; border-radius: 50px; box-shadow: 0 6px 0 #e67e22; cursor: pointer; }
         #countdown { display: none; font-size: 100px; font-weight: bold; color: #fff; }
-        
-        #result-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10001; justify-content: center; align-items: center; }
-        .modal-content { background: #fff; width: 85%; padding: 30px; border-radius: 20px; text-align: center; }
-        .score-display { font-size: 48px; color: #e63946; font-weight: bold; margin: 20px 0; }
-        input { width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 10px; font-size: 18px; box-sizing: border-box; }
-        .submit-btn { width: 100%; background: #e63946; color: white; border: none; padding: 15px; border-radius: 10px; font-size: 20px; font-weight: bold; cursor: pointer; }
+        #chances-bar { position: absolute; top: 20px; font-size: 18px; color: #ffd700; font-weight: bold; background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 20px; }
+
+        #result-modal, #lottery-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10001; justify-content: center; align-items: center; }
+        .modal-content { background: #fff; width: 90%; max-width: 400px; padding: 25px; border-radius: 20px; text-align: center; box-sizing: border-box; }
+        .score-display { font-size: 40px; color: #e63946; font-weight: bold; margin: 15px 0; }
+        input { width: 100%; padding: 12px; margin-bottom: 15px; border: 2px solid #ddd; border-radius: 10px; font-size: 16px; box-sizing: border-box; }
+        .submit-btn { width: 100%; background: #e63946; color: white; border: none; padding: 12px; border-radius: 10px; font-size: 18px; font-weight: bold; cursor: pointer; margin-bottom: 8px; }
+        .share-btn { background: #07c160; }
+        .home-btn { background: #ccc; color: #333; }
+
+        .wheel-box { position: relative; width: 280px; height: 280px; margin: 20px auto; }
+        .wheel-canvas { width: 100%; height: 100%; transition: transform 4s cubic-bezier(0.15, 0, 0.15, 1); }
+        .wheel-pointer { position: absolute; top: -15px; left: 50%; transform: translateX(-50%); width: 40px; z-index: 5; }
+        .wheel-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 70px; height: 70px; background: #ff4d4d; color: #fff; border: 4px solid #fff; border-radius: 50%; font-weight: bold; font-size: 14px; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
     </style>
 </head>
 <body>
 
     <div id="start-overlay">
+        <div id="chances-bar">剩余机会: <span id="chance-count">1</span></div>
         <h1 style="margin-bottom: 30px;">端午龙舟赛</h1>
         <button id="start-btn" onclick="preStart()">开始挑战</button>
         <div id="countdown">3</div>
@@ -60,8 +59,8 @@
     </div>
 
     <div class="controls" id="game-controls">
-        <button class="paddle-btn" id="btn-left"><span>🚣</span><span>左桨</span></button>
-        <button class="paddle-btn" id="btn-right"><span>🚣</span><span>右桨</span></button>
+        <button class="paddle-btn" id="btn-left"><span>🚣</span><span>左桨(向左)</span></button>
+        <button class="paddle-btn" id="btn-right"><span>🚣</span><span>右桨(向右)</span></button>
     </div>
 
     <div id="result-modal">
@@ -69,7 +68,23 @@
             <h2>冲过终点！</h2>
             <div class="score-display"><span id="final-time">0.00</span>s</div>
             <input type="text" id="user-name" placeholder="请输入姓名" maxlength="6">
-            <button class="submit-btn" onclick="saveResult()">提交成绩</button>
+            <button class="submit-btn" onclick="saveResult()">提交成绩并抽奖</button>
+        </div>
+    </div>
+
+    <div id="lottery-modal">
+        <div class="modal-content">
+            <h2 id="wheel-title">幸运大转盘</h2>
+            <div class="wheel-box">
+                <svg class="wheel-pointer" viewBox="0 0 100 100"><path d="M50 100 L20 0 L80 0 Z" fill="#333"/></svg>
+                <canvas id="wheel-canvas" class="wheel-canvas" width="600" height="600"></canvas>
+                <div class="wheel-btn" id="wheel-btn" onclick="startSpin()">点击<br>抽奖</div>
+            </div>
+            <div id="lottery-result" style="display:none">
+                <div class="score-display" id="lottery-prize" style="font-size: 22px; color: #ff9f1c;"></div>
+                <button class="submit-btn share-btn" onclick="shareToWeChat()">分享再玩一次</button>
+                <button class="submit-btn home-btn" onclick="location.reload()">返回首页</button>
+            </div>
         </div>
     </div>
 
@@ -80,305 +95,322 @@
 
         const TOTAL_DIST = 4000; 
         let distance = 0, speed = 0, startTime = 0, lastSide = '', finished = false, isGaming = false;
+        let leftStrokeAnim = 0, rightStrokeAnim = 0;
+        let targetBoatX = window.innerWidth / 2;
 
-        // 【新增变量】控制左右两侧划桨的动画进度 (0 ~ Math.PI)
-        let leftStrokeAnim = 0; 
-        let rightStrokeAnim = 0;
+        let userChances = parseInt(localStorage.getItem('wusu_game_chances')) || 1;
+        document.getElementById('chance-count').innerText = userChances;
 
-        // 核心优化：固定 resolution 为 1，解决移动端逻辑像素与渲染像素不一致导致的消失
         const app = new PIXI.Application({
-            width: window.innerWidth,
-            height: window.innerHeight,
-            backgroundColor: 0x0088cc,
-            antialias: true,
-            resolution: 1, 
-            autoDensity: true
+            width: window.innerWidth, height: window.innerHeight, backgroundColor: 0x0088cc, antialias: true, resolution: 1, autoDensity: true
         });
         document.body.appendChild(app.view);
 
-        // --- 1. 背景：动态水流样式 ---
-        const waterGraphic = new PIXI.Graphics();
-        waterGraphic.beginFill(0x0077be); // 基础蓝色水面
-        waterGraphic.drawRect(0, 0, 512, 512);
-        waterGraphic.endFill();
+        // --- 背景图适配逻辑 (修复不显示问题) ---
+        const bgTexture = PIXI.Texture.from('./background.jpg');
+        const water = new PIXI.TilingSprite(bgTexture, app.screen.width, app.screen.height);
         
-        waterGraphic.lineStyle(3, 0x33aaff, 0.5);
-        for (let y = 0; y < 512; y += 128) {
-            waterGraphic.moveTo(0, y + 64);
-            waterGraphic.quadraticCurveTo(128, y, 256, y + 64);
-            waterGraphic.quadraticCurveTo(384, y + 128, 512, y + 64);
+        function resizeBackground() {
+            if (bgTexture.baseTexture && bgTexture.baseTexture.valid) {
+                const scale = app.screen.height / bgTexture.height;
+                water.tileScale.set(scale);
+                // 水平居中显示横屏背景
+                water.tilePosition.x = (app.screen.width - bgTexture.width * scale) / 2;
+                water.width = app.screen.width;
+                water.height = app.screen.height;
+                return true;
+            }
+            return false;
         }
-        waterGraphic.lineStyle(2, 0x005c99, 0.4);
-        for (let y = 64; y < 512; y += 128) {
-            waterGraphic.moveTo(0, y + 64);
-            waterGraphic.quadraticCurveTo(128, y + 128, 256, y + 64);
-            waterGraphic.quadraticCurveTo(384, y, 512, y + 64);
-        }
-        const waterTexture = app.renderer.generateTexture(waterGraphic);
-        const water = new PIXI.TilingSprite(waterTexture, app.screen.width, app.screen.height);
+        
+        bgTexture.baseTexture.on('loaded', resizeBackground);
         app.stage.addChild(water);
 
-        // --- 2. 终点线样式 ---
+        const flagContainer = new PIXI.Container();
+        app.stage.addChild(flagContainer);
+        const flags = [];
+        let nextFlagDist = 0;
+
+        const entityContainer = new PIXI.Container();
+        app.stage.addChild(entityContainer);
+        const entities = [];
+
+        // 终点线 (修复文字居中问题)
         const finishLine = new PIXI.Container();
         const flGraphics = new PIXI.Graphics();
-        const flWidth = 3000; 
-        const flHeight = 40;
-        for(let y = 0; y < flHeight; y += 10) {
-            for(let x = 0; x < flWidth; x += 10) {
-                flGraphics.beginFill((x/10 + y/10) % 2 === 0 ? 0xffffff : 0x000000);
-                flGraphics.drawRect(x, y, 10, 10);
-                flGraphics.endFill();
+        for(let y=0; y<40; y+=10) {
+            for(let x=0; x<3000; x+=10) {
+                flGraphics.beginFill((x/10 + y/10)%2===0 ? 0xffffff:0x000000).drawRect(x,y,10,10).endFill();
             }
         }
-        flGraphics.x = -flWidth / 2;
+        flGraphics.x = -1500; // 让格子背景相对于容器中心对称
         
         const flText = new PIXI.Text('终    点', {
-            fontFamily: '"Microsoft YaHei", sans-serif',
-            fontSize: 28, fill: 0xff0000, fontWeight: 'bold', stroke: 0xffffff,
-            strokeThickness: 4, dropShadow: true, dropShadowColor: 0x000000,
-            dropShadowDistance: 2, dropShadowAlpha: 0.5
+            fontFamily:'"Microsoft YaHei"', 
+            fontSize:32, 
+            fill:0xff0000, 
+            fontWeight:'bold', 
+            stroke:0xffffff, 
+            strokeThickness:5
         });
-        flText.anchor.set(0.5);
-        flText.y = flHeight / 2;
-
+        flText.anchor.set(0.5); 
+        flText.x = 0; // 容器中心点
+        flText.y = 20; // 格子带中间
         finishLine.addChild(flGraphics, flText);
         finishLine.y = -200; 
         app.stage.addChild(finishLine);
 
-        // --- 3. 龙舟绘制 ---
+        // 龙舟
         const boat = new PIXI.Container();
-        
-        const shadow = new PIXI.Graphics();
-        shadow.beginFill(0x000000, 0.2).drawEllipse(0, 0, 30, 90).endFill();
-        boat.addChild(shadow);
-
-        const body = new PIXI.Graphics();
-        body.beginFill(0xb35900).drawPolygon([-16, -70, 16, -70, 20, 70, -20, 70]).endFill();
-        body.lineStyle(1, 0x804000, 0.8);
-        for(let i = -60; i < 60; i += 15) { body.moveTo(-17, i); body.lineTo(17, i); }
-        body.lineStyle(3, 0xcc0000).moveTo(-16, -70).lineTo(-20, 70);
-        body.lineStyle(3, 0xcc0000).moveTo(16, -70).lineTo(20, 70);
-        boat.addChild(body);
-
-        const head = new PIXI.Graphics();
-        head.beginFill(0x00b33c).drawPolygon([-18, -70, 18, -70, 14, -105, -14, -105]).endFill();
-        head.beginFill(0xe60000).drawRect(-10, -115, 20, 15).endFill(); 
-        head.lineStyle(4, 0xffcc00).moveTo(-10, -95).lineTo(-30, -110); 
-        head.lineStyle(4, 0xffcc00).moveTo(10, -95).lineTo(30, -110);  
-        head.beginFill(0xffffff).drawCircle(-8, -92, 5).drawCircle(8, -92, 5).endFill(); 
-        head.beginFill(0x000000).drawCircle(-8, -93, 2).drawCircle(8, -93, 2).endFill(); 
-        boat.addChild(head);
-
-        const tail = new PIXI.Graphics();
-        tail.beginFill(0x00b33c).drawPolygon([-18, 70, 18, 70, 0, 105]).endFill();
-        tail.lineStyle(3, 0xffcc00).moveTo(0, 70).lineTo(0, 100);
-        boat.addChild(tail);
-
-        const drum = new PIXI.Graphics();
-        drum.beginFill(0x8b0000).drawCircle(0, -45, 14).endFill(); 
-        drum.beginFill(0xffebcd).drawCircle(0, -45, 10).endFill(); 
-        drum.beginFill(0xffcc99).drawCircle(0, -20, 7).endFill();  
-        drum.beginFill(0x0066cc).drawRect(-10, -13, 20, 15).endFill(); 
-        boat.addChild(drum);
-
-        // --- 【新增】4. 划船小人阵列 ---
-        const rowers = [];
-        const numRowers = 6;
-        for (let i = 0; i < numRowers; i++) {
-            const rower = new PIXI.Container();
-            // 在船身从上到下等距排布
-            rower.y = -20 + i * 16; 
-            const isLeft = i % 2 === 0;
-            rower.x = isLeft ? -8 : 8;
-
-            // 头
-            const rHead = new PIXI.Graphics().beginFill(0xffcc99).drawCircle(0, 0, 5).endFill();
-            // 身体 (红衣)
-            const rBody = new PIXI.Graphics().beginFill(0xcc0000).drawRect(-6, 0, 12, 10).endFill();
-
-            // 手臂与船桨容器 (围绕肩膀旋转)
-            const armPaddle = new PIXI.Container();
-            const armDir = isLeft ? -1 : 1;
-            armPaddle.x = armDir * 5; 
-            armPaddle.y = 5;
-
-            // 绘制桨
-            const paddle = new PIXI.Graphics();
-            paddle.beginFill(0xdeb887).drawRect(-1.5, 0, 3, 25).endFill(); // 杆
-            paddle.beginFill(0x8b4513).drawRect(-3, 15, 6, 12).endFill();  // 桨叶
-
-            // 初始准备姿态角度
-            armPaddle.rotation = isLeft ? 2.0 : -2.0;
-
-            armPaddle.addChild(paddle);
-            rower.addChild(armPaddle, rBody, rHead);
-            boat.addChild(rower);
-            rowers.push({ armPaddle, isLeft });
+        const bodyShadow = new PIXI.Graphics().beginFill(0x000000, 0.25).drawEllipse(0, 10, 40, 85).endFill();
+        const bodyGraphic = new PIXI.Graphics();
+        bodyGraphic.beginFill(0x8b4513).drawEllipse(0, 0, 32, 80).endFill();
+        bodyGraphic.beginFill(0x5c2e0a).drawEllipse(0, 0, 26, 75).endFill();
+        for(let i = -60; i < 60; i += 12) {
+            bodyGraphic.beginFill(0xd9432e).drawPolygon([-32, i, -25, i+6, -32, i+12]).endFill();
+            bodyGraphic.beginFill(0xd9432e).drawPolygon([32, i, 25, i+6, 32, i+12]).endFill();
         }
-
+        const boatHead = new PIXI.Container();
+        const hG = new PIXI.Graphics();
+        hG.beginFill(0xd9432e).drawRoundedRect(-18, -120, 36, 30, 8).endFill();
+        hG.beginFill(0xedc485).drawPolygon([-15,-105, 15,-105, 12,-80, -12,-80]).endFill();
+        hG.beginFill(0xffffff).drawPolygon([-12,-100, -26,-115, -10,-90]).endFill();
+        hG.beginFill(0xffffff).drawPolygon([12,-100, 26,-115, 10,-90]).endFill();
+        hG.beginFill(0xffffff).drawCircle(-8, -102, 5).drawCircle(8, -102, 5).endFill();
+        hG.beginFill(0x000000).drawCircle(-8, -102, 2.5).drawCircle(8, -102, 2.5).endFill();
+        boatHead.addChild(hG);
+        const boatTail = new PIXI.Graphics();
+        boatTail.beginFill(0xd9432e).drawPolygon([-15,75, 15,75, 0,110, -5,95]).endFill();
+        boat.addChild(bodyShadow, bodyGraphic, boatHead, boatTail);
+        const rowers = [];
+        for (let i = 0; i < 4; i++) {
+            const rower = new PIXI.Container(); rower.y = -40 + i * 28; 
+            const zongziL = new PIXI.Graphics().beginFill(0xf5f5dc).drawPolygon([-10,8, 10,8, 0,-12]).beginFill(0x4b7b32).drawPolygon([-10,8, 10,8, 0,0]).endFill();
+            const armPaddleL = new PIXI.Container(); armPaddleL.x = -8; armPaddleL.y = 0;
+            const paddleL = new PIXI.Graphics().beginFill(0xbd8e58).drawRect(-1.5, 0, 3, 35).beginFill(0x8b5a2b).drawRoundedRect(-5, 25, 10, 15, 3).endFill();
+            armPaddleL.rotation = 2.0; armPaddleL.addChild(paddleL); rower.addChild(zongziL, armPaddleL);
+            const rowerR = new PIXI.Container(); rowerR.y = rower.y;
+            const zongziR = new PIXI.Graphics().beginFill(0xf5f5dc).drawPolygon([-10,8, 10,8, 0,-12]).beginFill(0x4b7b32).drawPolygon([-10,8, 10,8, 0,0]).endFill();
+            const armPaddleR = new PIXI.Container(); armPaddleR.x = 8; armPaddleR.y = 0;
+            const paddleR = new PIXI.Graphics().beginFill(0xbd8e58).drawRect(-1.5, 0, 3, 35).beginFill(0x8b5a2b).drawRoundedRect(-5, 25, 10, 15, 3).endFill();
+            armPaddleR.rotation = -2.0; armPaddleR.addChild(paddleR); rowerR.addChild(zongziR, armPaddleR);
+            boat.addChild(rower, rowerR);
+            rowers.push({armPaddleL: armPaddleL, armPaddleR: armPaddleR});
+        }
         app.stage.addChild(boat);
 
-        function resetBoatPosition() {
-            boat.x = app.screen.width / 2;
-            boat.y = app.screen.height * 0.7; 
-        }
+        function resetBoatPosition() { boat.x = app.screen.width/2; targetBoatX = boat.x; boat.y = app.screen.height*0.7; }
         resetBoatPosition();
 
         function preStart() {
             document.getElementById('start-btn').style.display = 'none';
-            const cd = document.getElementById('countdown');
-            cd.style.display = 'block';
+            document.getElementById('chances-bar').style.display = 'none';
+            const cd = document.getElementById('countdown'); cd.style.display = 'block';
             let count = 3;
-            let timer = setInterval(() => {
-                count--;
-                if(count > 0) cd.innerText = count;
-                else if(count === 0) cd.innerText = "GO!";
-                else { clearInterval(timer); startGame(); }
-            }, 1000);
+            let timer = setInterval(() => { count--; if(count>0) cd.innerText=count; else if(count===0) cd.innerText="GO!"; else { clearInterval(timer); startGame(); } }, 1000);
         }
 
         function startGame() {
             document.getElementById('start-overlay').style.display = 'none';
             document.getElementById('ui-header').style.opacity = '1';
-            const ctrl = document.getElementById('game-controls');
-            ctrl.style.display = 'flex';
-            setTimeout(() => { ctrl.style.opacity = '1'; ctrl.style.pointerEvents = 'auto'; }, 50);
-            isGaming = true;
-            finished = false;
-            distance = 0;
-            speed = 0;
-            startTime = Date.now();
+            document.getElementById('game-controls').style.display = 'flex';
+            setTimeout(() => { document.getElementById('game-controls').style.opacity = '1'; }, 50);
+            isGaming = true; finished = false; distance = 0; speed = 0; startTime = Date.now();
         }
 
         function handlePaddle(side) {
             if (!isGaming) return; 
-
-            // 触发对应侧小人的划水动画
-            if (side === 'left') leftStrokeAnim = Math.PI;
-            if (side === 'right') rightStrokeAnim = Math.PI;
-
-            if (side !== lastSide) {
-                // 【优化点】大幅降低单次点击的速度增量，从 7.0 降到 2.5，拉长游戏时长
-                speed += 2.5; 
-                boat.scale.set(1.06, 0.94); // 降低船体弹跳幅度使其更平滑
-            } else {
-                speed += 0.2; 
-            }
+            if (side === 'left') { leftStrokeAnim = Math.PI; targetBoatX -= 45; }
+            else { rightStrokeAnim = Math.PI; targetBoatX += 45; }
+            targetBoatX = Math.max(50, Math.min(app.screen.width-50, targetBoatX));
+            if (side !== lastSide) speed += 2.5; else speed += 0.2;
             lastSide = side;
         }
 
         document.getElementById('btn-left').addEventListener('pointerdown', (e) => { e.preventDefault(); handlePaddle('left'); });
         document.getElementById('btn-right').addEventListener('pointerdown', (e) => { e.preventDefault(); handlePaddle('right'); });
 
-        // 游戏主循环
+        function showFloatText(text, color, x, y) {
+            const ft = new PIXI.Text(text, {fontSize:24, fill:color, fontWeight:'bold', stroke:0xffffff, strokeThickness:3});
+            ft.x = x; ft.y = y; ft.anchor.set(0.5); app.stage.addChild(ft);
+            let tick = 0; app.ticker.add(function anim() { ft.y -= 2; ft.alpha -= 0.02; if(++tick > 50) { app.ticker.remove(anim); app.stage.removeChild(ft); } });
+        }
+
+        let laneCooldowns = [0, 0, 0];
+        let lanePropCooldowns = [0, 0, 0];
+        let isBgFixed = false; // 用于标记背景图是否已校准
+
         app.ticker.add(() => {
-            boat.x = app.screen.width / 2;
-            finishLine.x = app.screen.width / 2;
-            
-            if (!isGaming && !finished) {
-                boat.y = app.screen.height * 0.7;
-                return;
+            // 兜底逻辑：如果背景没出来，持续尝试校准
+            if (!isBgFixed) {
+                if(resizeBackground()) isBgFixed = true;
             }
 
-            // 【新增】处理小人的划水动画推进
+            boat.x += (targetBoatX - boat.x) * 0.15;
+            finishLine.x = app.screen.width / 2; // 始终保持终点线容器在屏幕中心
+
+            if (!isGaming && !finished) { boat.y = app.screen.height*0.7; return; }
+
             if (leftStrokeAnim > 0) { leftStrokeAnim -= 0.3; if (leftStrokeAnim < 0) leftStrokeAnim = 0; }
             if (rightStrokeAnim > 0) { rightStrokeAnim -= 0.3; if (rightStrokeAnim < 0) rightStrokeAnim = 0; }
 
             rowers.forEach(r => {
-                let stroke = r.isLeft ? leftStrokeAnim : rightStrokeAnim;
-                let sweep = Math.sin(stroke); // Math.sin(0~PI) 生成 0 -> 1 -> 0 的完美平滑摆动
-                if (r.isLeft) {
-                    r.armPaddle.rotation = 2.0 - sweep * 1.2; // 左侧向后划水角度计算
-                } else {
-                    r.armPaddle.rotation = -2.0 + sweep * 1.2; // 右侧向后划水角度计算
-                }
+                let sL = Math.sin(leftStrokeAnim); let sR = Math.sin(rightStrokeAnim);
+                r.armPaddleL.rotation = 2.0 - sL * 1.5; r.armPaddleR.rotation = -2.0 + sR * 1.5;
             });
 
-            speed *= 0.95; 
-            distance += speed;
-            water.tilePosition.y += speed; 
-
-            const distanceRemaining = TOTAL_DIST - distance;
-            if (distanceRemaining < app.screen.height && distanceRemaining > -app.screen.height) {
-                finishLine.y = boat.y - distanceRemaining;
-            } else if (distanceRemaining <= -app.screen.height) {
-                finishLine.y = app.screen.height + 200; 
+            speed *= 0.95; distance += speed; water.tilePosition.y += speed; 
+            for(let l=0; l<3; l++) {
+                if(laneCooldowns[l] > 0) laneCooldowns[l] -= speed;
+                if(lanePropCooldowns[l] > 0) lanePropCooldowns[l] -= speed;
             }
 
-            const now = (Date.now() - startTime) / 1000;
-            
-            if (!finished) {
-                document.getElementById('time').innerText = now.toFixed(2);
-                document.getElementById('prog').innerText = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
-                
-                if (distance >= TOTAL_DIST) {
-                    finished = true;
-                    document.getElementById('prog').innerText = "100";
-                    
-                    document.getElementById('game-controls').style.opacity = '0';
-                    document.getElementById('game-controls').style.pointerEvents = 'none';
+            if (isGaming && !finished) {
+                nextFlagDist -= speed;
+                if (nextFlagDist <= 0) {
+                    const color = Math.random() > 0.5 ? 0xff0000 : 0xffcc00;
+                    const flagGroupL = new PIXI.Container();
+                    const poleL = new PIXI.Graphics().beginFill(0x333333).drawRect(-2, 0, 4, 75).endFill();
+                    const clothL = new PIXI.Graphics().beginFill(color).drawPolygon([0, 5, 45, 25, 0, 45]).endFill();
+                    flagGroupL.addChild(poleL, clothL); flagGroupL.x = 20; flagGroupL.y = -100;
+                    flagContainer.addChild(flagGroupL); flags.push({ group: flagGroupL, cloth: clothL });
+                    const flagGroupR = new PIXI.Container();
+                    const poleR = new PIXI.Graphics().beginFill(0x333333).drawRect(-2, 0, 4, 75).endFill();
+                    const clothR = new PIXI.Graphics().beginFill(color).drawPolygon([0, 5, -45, 25, 0, 45]).endFill();
+                    flagGroupR.addChild(poleR, clothR); flagGroupR.x = app.screen.width - 20; flagGroupR.y = -100;
+                    flagContainer.addChild(flagGroupR); flags.push({ group: flagGroupR, cloth: clothR });
+                    nextFlagDist = 220 + Math.random() * 80;
+                }
+            }
+            flags.forEach(f => {
+                f.group.y += speed;
+                const wave = Math.sin(Date.now() / 180 + f.group.y / 40);
+                f.cloth.skew.y = wave * 0.2; f.cloth.scale.x = 1 + wave * 0.1;
+            });
+            for(let i=flags.length-1; i>=0; i--) if(flags[i].group.y > app.screen.height + 100) { flagContainer.removeChild(flags[i].group); flags.splice(i, 1); }
 
-                    const finalTimeStr = now.toFixed(2);
+            if (isGaming && !finished) {
+                const distanceRemaining = TOTAL_DIST - distance;
+                if (distanceRemaining > app.screen.height * 1.2) {
+                    if (Math.random() < 0.028) { 
+                        const lane = Math.floor(Math.random()*3); 
+                        const isProp = Math.random() < 0.2; 
+                        const entity = new PIXI.Graphics();
+                        if (isProp) {
+                            if (lanePropCooldowns[lane] > 0) return;
+                            if(Math.random() < 0.5) {
+                                entity.beginFill(0xd2a679).drawCircle(0, 0, 18).beginFill(0xffdb99).drawCircle(0, 0, 13).lineStyle(1, 0x8b4513, 0.3).drawCircle(0,0,8);
+                                for(let s=0; s<10; s++) entity.beginFill(0x3d1f00).drawCircle((Math.random()-0.5)*16, (Math.random()-0.5)*16, 1).endFill();
+                                entity.type = 'naan';
+                            } else {
+                                entity.beginFill(0x1a4d1a).drawRoundedRect(-7,-18,14,32,4).drawRect(-4,-25,8,10).beginFill(0xcc0000).drawRect(-4,-26,8,3).beginFill(0xffcc00).drawRect(-7,-8,14,10).beginFill(0xcc0000).drawCircle(0,-3,3).endFill();
+                                entity.type = 'beer';
+                            }
+                            laneCooldowns[lane] = 450; lanePropCooldowns[lane] = 1500;
+                            entity.x = (lane === 0) ? app.screen.width*0.25 : (lane === 1 ? app.screen.width*0.5 : app.screen.width*0.75);
+                        } else {
+                            if (laneCooldowns[lane] > 0) return;
+                            entity.beginFill(0x8B4513).drawRect(-35, -10, 70, 20).lineStyle(1, 0x552200).moveTo(-30,0).lineTo(30,0).endFill();
+                            entity.type = 'board';
+                            entity.x = (lane === 0) ? app.screen.width*0.2 : (lane === 1 ? app.screen.width*0.5 : app.screen.width*0.8);
+                            laneCooldowns[lane] = 300;
+                        }
+                        entity.y = -100; entity.active = true;
+                        entityContainer.addChild(entity); entities.push(entity);
+                    }
+                }
 
-                    setTimeout(() => {
-                        isGaming = false;
-                        showResult(finalTimeStr);
-                    }, 1500);
+                for (let i = entities.length - 1; i >= 0; i--) {
+                    let ent = entities[i]; ent.y += speed * 0.85; 
+                    if (ent.active) {
+                        let isHit = false;
+                        if (ent.type === 'naan' || ent.type === 'beer') {
+                            let dx = boat.x - ent.x, dy = (boat.y - 100) - ent.y;
+                            if (Math.sqrt(dx*dx + dy*dy) < 35) {
+                                isHit = true; speed += 7.5; showFloatText("+加速", 0xffd700, boat.x, boat.y - 110);
+                            }
+                        } else {
+                            let horizontalOverlap = Math.abs(boat.x - ent.x) < (35 + 18); 
+                            let verticalOverlap = Math.abs(boat.y - ent.y) < (10 + 75);  
+                            if (horizontalOverlap && verticalOverlap) {
+                                isHit = true; speed *= 0.15; showFloatText("-减速", 0xff0000, boat.x, boat.y - 60); boat.x += (Math.random()-0.5)*25;
+                            }
+                        }
+                        if (isHit) { ent.active = false; ent.alpha = 0; }
+                    }
+                    if (ent.y > app.screen.height + 100) { entityContainer.removeChild(ent); entities.splice(i, 1); }
                 }
             }
 
-            boat.scale.x += (1 - boat.scale.x) * 0.1;
-            boat.scale.y += (1 - boat.scale.y) * 0.1;
-            boat.x += Math.sin(Date.now() / 200) * 2;
+            const distRem = TOTAL_DIST - distance;
+            if (distRem < app.screen.height && distRem > -app.screen.height) finishLine.y = boat.y - distRem;
+            else if (distRem <= -app.screen.height) finishLine.y = app.screen.height + 200; 
 
-            if (finished) {
-                boat.y -= speed * 0.4;
+            if (!finished) {
+                document.getElementById('time').innerText = ((Date.now() - startTime)/1000).toFixed(2);
+                document.getElementById('prog').innerText = Math.floor(Math.min(100, (distance / TOTAL_DIST) * 100));
+                if (distance >= TOTAL_DIST) {
+                    finished = true; document.getElementById('prog').innerText = "100";
+                    document.getElementById('game-controls').style.opacity = '0';
+                    const finalTime = document.getElementById('time').innerText;
+                    setTimeout(() => { isGaming = false; showResult(finalTime); }, 1500);
+                }
             }
+            boat.scale.x += (1 - boat.scale.x)*0.1; boat.scale.y += (1 - boat.scale.y)*0.1;
+            if (finished) boat.y -= speed * 0.4;
         });
 
-        function showResult(s) {
-            document.getElementById('final-time').innerText = s;
-            document.getElementById('result-modal').style.display = 'flex';
-        }
+        function showResult(s) { document.getElementById('final-time').innerText = s; document.getElementById('result-modal').style.display = 'flex'; }
 
         async function saveResult() {
             const name = document.getElementById('user-name').value.trim();
             const score = parseFloat(document.getElementById('final-time').innerText);
-            
             if (!name) return alert("请输入姓名！");
-
             try {
-                const { data: existingUser, error: checkError } = await sb
-                    .from('ranks')
-                    .select('nickname')
-                    .eq('nickname', name)
-                    .maybeSingle(); 
+                const { data: existingUser } = await sb.from('ranks').select('nickname').eq('nickname', name).maybeSingle(); 
+                if (!existingUser) await sb.from('ranks').insert([{ nickname: name, score: score }]);
+                document.getElementById('result-modal').style.display = 'none';
+                initWheel(); document.getElementById('lottery-modal').style.display = 'flex';
+            } catch (err) { alert("提交失败"); }
+        }
 
-                if (checkError) throw checkError;
-
-                if (existingUser) {
-                    return alert("该姓名已经提交过，不能重复提交！");
-                }
-
-                const { error: insertError } = await sb
-                    .from('ranks')
-                    .insert([{ nickname: name, score: score }]);
-
-                if (insertError) throw insertError;
-
-                alert("提交成功！");
-                location.reload();
-            } catch (err) { 
-                console.error(err);
-                alert("提交失败，请重试"); 
+        const prizes = ["乌苏代金券", "谢谢参与", "免费啤酒", "谢谢参与", "定制伴手礼", "谢谢参与", "烤肉8折券", "谢谢参与"];
+        const colors = ["#ffcc00", "#eee", "#ff9900", "#eee", "#ffcc00", "#eee", "#ff9900", "#eee"];
+        function initWheel() {
+            const ctx = document.getElementById('wheel-canvas').getContext('2d');
+            ctx.clearRect(0, 0, 600, 600);
+            for(let i = 0; i < 8; i++) {
+                ctx.beginPath(); ctx.moveTo(300, 300); ctx.arc(300, 300, 280, i*Math.PI/4, (i+1)*Math.PI/4);
+                ctx.fillStyle = colors[i]; ctx.fill(); ctx.stroke();
+                ctx.save(); ctx.translate(300, 300); ctx.rotate(i*Math.PI/4 + Math.PI/8);
+                ctx.fillStyle = "#333"; ctx.font = "bold 24px Arial"; ctx.textAlign = "right"; ctx.fillText(prizes[i].slice(0,4), 250, 10); ctx.restore();
             }
         }
 
-        window.addEventListener('resize', () => {
-            app.renderer.resize(window.innerWidth, window.innerHeight);
-            water.width = app.screen.width;
-            water.height = app.screen.height;
-            if(!finished) resetBoatPosition();
+        let isSpinning = false;
+        function startSpin() {
+            if(isSpinning) return; isSpinning = true;
+            let resultIndex = Math.random() < 0.6 ? [1,3,5,7][Math.floor(Math.random()*4)] : [0,2,4,6][Math.floor(Math.random()*4)];
+            document.getElementById('wheel-canvas').style.transform = `rotate(${1800 + 270 - (resultIndex*45 + 22.5)}deg)`;
+            setTimeout(() => {
+                document.getElementById('wheel-title').innerText = "开奖结果";
+                document.getElementById('wheel-btn').style.display = "none";
+                document.getElementById('lottery-result').style.display = "block";
+                document.getElementById('lottery-prize').innerText = prizes[resultIndex];
+                isSpinning = false;
+            }, 4500);
+        }
+
+        function shareToWeChat() {
+            alert("点击右上角分享，完成后点确定获取奖励！");
+            localStorage.setItem('wusu_game_chances', (parseInt(localStorage.getItem('wusu_game_chances')) || 0) + 1);
+            location.reload();
+        }
+
+        window.addEventListener('resize', () => { 
+            app.renderer.resize(window.innerWidth, window.innerHeight); 
+            isBgFixed = false; // 窗口改变后重新触发背景校准
+            if(!finished) resetBoatPosition(); 
         });
     </script>
 </body>
