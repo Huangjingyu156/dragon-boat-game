@@ -106,45 +106,33 @@
         });
         document.body.appendChild(app.view);
 
-        // --- [优化2] 背景图适配逻辑：镜像拼接实现丝滑衔接 ---
         const bgTexture = PIXI.Texture.from('./background.jpg');
         let water;
         
         function resizeBackground() {
             if (bgTexture.baseTexture && bgTexture.baseTexture.valid) {
-                // 如果已经存在旧的水面，先移除
                 if (water) app.stage.removeChild(water);
-
-                // 创建一个 Canvas 来处理镜像
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 const originWidth = bgTexture.width;
                 const originHeight = bgTexture.height;
-                
                 canvas.width = originWidth;
-                canvas.height = originHeight * 2; // 高度翻倍存放镜像
-
-                // 绘制第一张正向图
+                canvas.height = originHeight * 2;
                 ctx.drawImage(bgTexture.baseTexture.resource.source, 0, 0);
-                // 绘制第二张垂直翻转图，实现底部和顶部完美对接
                 ctx.save();
                 ctx.scale(1, -1);
                 ctx.drawImage(bgTexture.baseTexture.resource.source, 0, -originHeight * 2);
                 ctx.restore();
-
                 const seamlessTexture = PIXI.Texture.from(canvas);
                 water = new PIXI.TilingSprite(seamlessTexture, app.screen.width, app.screen.height);
-                
                 const scale = app.screen.height / originHeight;
                 water.tileScale.set(scale);
                 water.tilePosition.x = (app.screen.width - originWidth * scale) / 2;
-                
-                app.stage.addChildAt(water, 0); // 确保在最底层
+                app.stage.addChildAt(water, 0);
                 return true;
             }
             return false;
         }
-        
         bgTexture.baseTexture.on('loaded', resizeBackground);
 
         const flagContainer = new PIXI.Container();
@@ -156,7 +144,6 @@
         app.stage.addChild(entityContainer);
         const entities = [];
 
-        // 终点线
         const finishLine = new PIXI.Container();
         const flGraphics = new PIXI.Graphics();
         for(let y=0; y<40; y+=10) {
@@ -170,7 +157,7 @@
         finishLine.addChild(flGraphics, flText);
         finishLine.y = -200; app.stage.addChild(finishLine);
 
-        // 龙舟
+        // 龙舟绘制
         const boat = new PIXI.Container();
         const bodyShadow = new PIXI.Graphics().beginFill(0x000000, 0.25).drawEllipse(0, 10, 40, 85).endFill();
         const bodyGraphic = new PIXI.Graphics();
@@ -248,7 +235,7 @@
 
         let laneCooldowns = [0, 0, 0], lanePropCooldowns = [0, 0, 0];
         let bgFixCount = 0;
-        let rowSpawnLock = 0; // 行锁机制，确保横向通过性
+        let rowSpawnLock = 0; 
 
         app.ticker.add(() => {
             if (bgFixCount < 60) { if(resizeBackground()) bgFixCount = 100; bgFixCount++; }
@@ -298,14 +285,14 @@
             });
             for(let i=flags.length-1; i>=0; i--) if(flags[i].group.y > app.screen.height + 100) { flagContainer.removeChild(flags[i].group); flags.splice(i, 1); }
 
-            // --- [优化1] 障碍物生成逻辑：增加通过性控制 ---
+            // --- 道具与障碍物生成优化逻辑 ---
             if (isGaming && !finished) {
                 const distanceRemaining = TOTAL_DIST - distance;
                 if (distanceRemaining > app.screen.height * 1.2) {
-                    // 控制整体密度，并使用行锁防止并排障碍
+                    // [优化] 增加行锁距离(150->350)，确保手机端纵向间距足够大
                     if (Math.random() < 0.025 && rowSpawnLock <= 0) { 
                         const lane = Math.floor(Math.random()*3); 
-                        const isProp = Math.random() < 0.15; // 降低道具比例增加难度
+                        const isProp = Math.random() < 0.15; 
                         const entity = new PIXI.Graphics();
                         
                         if (isProp) {
@@ -318,18 +305,20 @@
                                 entity.beginFill(0x1a4d1a).drawRoundedRect(-7,-18,14,32,4).drawRect(-4,-25,8,10).beginFill(0xcc0000).drawRect(-4,-26,8,3).beginFill(0xffcc00).drawRect(-7,-8,14,10).beginFill(0xcc0000).drawCircle(0,-3,3).endFill();
                                 entity.type = 'beer';
                             }
-                            lanePropCooldowns[lane] = 1800; // 同一航道道具不连发
+                            // [优化] 吃完道具后的航道冷却增长到1800，确保“吃完不撞”
+                            laneCooldowns[lane] = 1800; 
+                            lanePropCooldowns[lane] = 1800; 
                             entity.x = (lane === 0) ? app.screen.width*0.25 : (lane === 1 ? app.screen.width*0.5 : app.screen.width*0.75);
                         } else {
                             if (laneCooldowns[lane] > 0) return;
                             entity.beginFill(0x8B4513).drawRect(-35, -10, 70, 20).lineStyle(1, 0x552200).moveTo(-30,0).lineTo(30,0).endFill();
                             entity.type = 'board';
                             entity.x = (lane === 0) ? app.screen.width*0.22 : (lane === 1 ? app.screen.width*0.5 : app.screen.width*0.78);
-                            laneCooldowns[lane] = 500; // 同一航道障碍物不连发
+                            laneCooldowns[lane] = 800; // 航道内障碍物间隔拉大
                         }
                         entity.y = -100; entity.active = true;
                         entityContainer.addChild(entity); entities.push(entity);
-                        rowSpawnLock = 150; // 行锁：生成一个后，接下来的150距离内不再生成新东西
+                        rowSpawnLock = 350; // [优化] 提升纵向最小间距，保证阶梯式通过
                     }
                 }
 
@@ -337,15 +326,14 @@
                     let ent = entities[i]; ent.y += speed * 0.85; 
                     if (ent.active) {
                         let isHit = false;
-                        if (ent.type === 'naan' || ent.type === 'beer') {
-                            let dx = boat.x - ent.x, dy = (boat.y - 100) - ent.y;
-                            if (Math.sqrt(dx*dx + dy*dy) < 35) {
+                        // [优化] 不再区分类型，全船身矩形判定
+                        let horizontalOverlap = Math.abs(boat.x - ent.x) < (35 + 18); 
+                        let verticalOverlap = Math.abs(boat.y - ent.y) < (10 + 75);  
+                        
+                        if (horizontalOverlap && verticalOverlap) {
+                            if (ent.type === 'naan' || ent.type === 'beer') {
                                 isHit = true; speed += 7.5; showFloatText("+加速", 0xffd700, boat.x, boat.y - 110);
-                            }
-                        } else {
-                            let horizontalOverlap = Math.abs(boat.x - ent.x) < (35 + 18); 
-                            let verticalOverlap = Math.abs(boat.y - ent.y) < (10 + 75);  
-                            if (horizontalOverlap && verticalOverlap) {
+                            } else {
                                 isHit = true; speed *= 0.15; showFloatText("-减速", 0xff0000, boat.x, boat.y - 60); boat.x += (Math.random()-0.5)*25;
                             }
                         }
