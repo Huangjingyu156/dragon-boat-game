@@ -106,25 +106,46 @@
         });
         document.body.appendChild(app.view);
 
-        // --- 背景图适配逻辑 (修复不显示问题) ---
+        // --- [优化2] 背景图适配逻辑：镜像拼接实现丝滑衔接 ---
         const bgTexture = PIXI.Texture.from('./background.jpg');
-        const water = new PIXI.TilingSprite(bgTexture, app.screen.width, app.screen.height);
+        let water;
         
         function resizeBackground() {
             if (bgTexture.baseTexture && bgTexture.baseTexture.valid) {
-                const scale = app.screen.height / bgTexture.height;
+                // 如果已经存在旧的水面，先移除
+                if (water) app.stage.removeChild(water);
+
+                // 创建一个 Canvas 来处理镜像
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const originWidth = bgTexture.width;
+                const originHeight = bgTexture.height;
+                
+                canvas.width = originWidth;
+                canvas.height = originHeight * 2; // 高度翻倍存放镜像
+
+                // 绘制第一张正向图
+                ctx.drawImage(bgTexture.baseTexture.resource.source, 0, 0);
+                // 绘制第二张垂直翻转图，实现底部和顶部完美对接
+                ctx.save();
+                ctx.scale(1, -1);
+                ctx.drawImage(bgTexture.baseTexture.resource.source, 0, -originHeight * 2);
+                ctx.restore();
+
+                const seamlessTexture = PIXI.Texture.from(canvas);
+                water = new PIXI.TilingSprite(seamlessTexture, app.screen.width, app.screen.height);
+                
+                const scale = app.screen.height / originHeight;
                 water.tileScale.set(scale);
-                // 水平居中显示横屏背景
-                water.tilePosition.x = (app.screen.width - bgTexture.width * scale) / 2;
-                water.width = app.screen.width;
-                water.height = app.screen.height;
+                water.tilePosition.x = (app.screen.width - originWidth * scale) / 2;
+                
+                app.stage.addChildAt(water, 0); // 确保在最底层
                 return true;
             }
             return false;
         }
         
         bgTexture.baseTexture.on('loaded', resizeBackground);
-        app.stage.addChild(water);
 
         const flagContainer = new PIXI.Container();
         app.stage.addChild(flagContainer);
@@ -135,7 +156,7 @@
         app.stage.addChild(entityContainer);
         const entities = [];
 
-        // 终点线 (修复文字居中问题)
+        // 终点线
         const finishLine = new PIXI.Container();
         const flGraphics = new PIXI.Graphics();
         for(let y=0; y<40; y+=10) {
@@ -143,22 +164,11 @@
                 flGraphics.beginFill((x/10 + y/10)%2===0 ? 0xffffff:0x000000).drawRect(x,y,10,10).endFill();
             }
         }
-        flGraphics.x = -1500; // 让格子背景相对于容器中心对称
-        
-        const flText = new PIXI.Text('终    点', {
-            fontFamily:'"Microsoft YaHei"', 
-            fontSize:32, 
-            fill:0xff0000, 
-            fontWeight:'bold', 
-            stroke:0xffffff, 
-            strokeThickness:5
-        });
-        flText.anchor.set(0.5); 
-        flText.x = 0; // 容器中心点
-        flText.y = 20; // 格子带中间
+        flGraphics.x = -1500;
+        const flText = new PIXI.Text('终    点', {fontFamily:'"Microsoft YaHei"', fontSize:32, fill:0xff0000, fontWeight:'bold', stroke:0xffffff, strokeThickness:5});
+        flText.anchor.set(0.5); flText.x = 0; flText.y = 20;
         finishLine.addChild(flGraphics, flText);
-        finishLine.y = -200; 
-        app.stage.addChild(finishLine);
+        finishLine.y = -200; app.stage.addChild(finishLine);
 
         // 龙舟
         const boat = new PIXI.Container();
@@ -236,18 +246,14 @@
             let tick = 0; app.ticker.add(function anim() { ft.y -= 2; ft.alpha -= 0.02; if(++tick > 50) { app.ticker.remove(anim); app.stage.removeChild(ft); } });
         }
 
-        let laneCooldowns = [0, 0, 0];
-        let lanePropCooldowns = [0, 0, 0];
-        let isBgFixed = false; // 用于标记背景图是否已校准
+        let laneCooldowns = [0, 0, 0], lanePropCooldowns = [0, 0, 0];
+        let bgFixCount = 0;
+        let rowSpawnLock = 0; // 行锁机制，确保横向通过性
 
         app.ticker.add(() => {
-            // 兜底逻辑：如果背景没出来，持续尝试校准
-            if (!isBgFixed) {
-                if(resizeBackground()) isBgFixed = true;
-            }
-
+            if (bgFixCount < 60) { if(resizeBackground()) bgFixCount = 100; bgFixCount++; }
             boat.x += (targetBoatX - boat.x) * 0.15;
-            finishLine.x = app.screen.width / 2; // 始终保持终点线容器在屏幕中心
+            finishLine.x = app.screen.width / 2;
 
             if (!isGaming && !finished) { boat.y = app.screen.height*0.7; return; }
 
@@ -259,11 +265,14 @@
                 r.armPaddleL.rotation = 2.0 - sL * 1.5; r.armPaddleR.rotation = -2.0 + sR * 1.5;
             });
 
-            speed *= 0.95; distance += speed; water.tilePosition.y += speed; 
+            speed *= 0.95; distance += speed; 
+            if(water) water.tilePosition.y += speed; 
+            
             for(let l=0; l<3; l++) {
                 if(laneCooldowns[l] > 0) laneCooldowns[l] -= speed;
                 if(lanePropCooldowns[l] > 0) lanePropCooldowns[l] -= speed;
             }
+            if(rowSpawnLock > 0) rowSpawnLock -= speed;
 
             if (isGaming && !finished) {
                 nextFlagDist -= speed;
@@ -289,13 +298,16 @@
             });
             for(let i=flags.length-1; i>=0; i--) if(flags[i].group.y > app.screen.height + 100) { flagContainer.removeChild(flags[i].group); flags.splice(i, 1); }
 
+            // --- [优化1] 障碍物生成逻辑：增加通过性控制 ---
             if (isGaming && !finished) {
                 const distanceRemaining = TOTAL_DIST - distance;
                 if (distanceRemaining > app.screen.height * 1.2) {
-                    if (Math.random() < 0.028) { 
+                    // 控制整体密度，并使用行锁防止并排障碍
+                    if (Math.random() < 0.025 && rowSpawnLock <= 0) { 
                         const lane = Math.floor(Math.random()*3); 
-                        const isProp = Math.random() < 0.2; 
+                        const isProp = Math.random() < 0.15; // 降低道具比例增加难度
                         const entity = new PIXI.Graphics();
+                        
                         if (isProp) {
                             if (lanePropCooldowns[lane] > 0) return;
                             if(Math.random() < 0.5) {
@@ -306,17 +318,18 @@
                                 entity.beginFill(0x1a4d1a).drawRoundedRect(-7,-18,14,32,4).drawRect(-4,-25,8,10).beginFill(0xcc0000).drawRect(-4,-26,8,3).beginFill(0xffcc00).drawRect(-7,-8,14,10).beginFill(0xcc0000).drawCircle(0,-3,3).endFill();
                                 entity.type = 'beer';
                             }
-                            laneCooldowns[lane] = 450; lanePropCooldowns[lane] = 1500;
+                            lanePropCooldowns[lane] = 1800; // 同一航道道具不连发
                             entity.x = (lane === 0) ? app.screen.width*0.25 : (lane === 1 ? app.screen.width*0.5 : app.screen.width*0.75);
                         } else {
                             if (laneCooldowns[lane] > 0) return;
                             entity.beginFill(0x8B4513).drawRect(-35, -10, 70, 20).lineStyle(1, 0x552200).moveTo(-30,0).lineTo(30,0).endFill();
                             entity.type = 'board';
-                            entity.x = (lane === 0) ? app.screen.width*0.2 : (lane === 1 ? app.screen.width*0.5 : app.screen.width*0.8);
-                            laneCooldowns[lane] = 300;
+                            entity.x = (lane === 0) ? app.screen.width*0.22 : (lane === 1 ? app.screen.width*0.5 : app.screen.width*0.78);
+                            laneCooldowns[lane] = 500; // 同一航道障碍物不连发
                         }
                         entity.y = -100; entity.active = true;
                         entityContainer.addChild(entity); entities.push(entity);
+                        rowSpawnLock = 150; // 行锁：生成一个后，接下来的150距离内不再生成新东西
                     }
                 }
 
@@ -352,8 +365,8 @@
                 if (distance >= TOTAL_DIST) {
                     finished = true; document.getElementById('prog').innerText = "100";
                     document.getElementById('game-controls').style.opacity = '0';
-                    const finalTime = document.getElementById('time').innerText;
-                    setTimeout(() => { isGaming = false; showResult(finalTime); }, 1500);
+                    const finalTimeStr = document.getElementById('time').innerText;
+                    setTimeout(() => { isGaming = false; showResult(finalTimeStr); }, 1500);
                 }
             }
             boat.scale.x += (1 - boat.scale.x)*0.1; boat.scale.y += (1 - boat.scale.y)*0.1;
@@ -409,7 +422,7 @@
 
         window.addEventListener('resize', () => { 
             app.renderer.resize(window.innerWidth, window.innerHeight); 
-            isBgFixed = false; // 窗口改变后重新触发背景校准
+            bgFixCount = 0; 
             if(!finished) resetBoatPosition(); 
         });
     </script>
